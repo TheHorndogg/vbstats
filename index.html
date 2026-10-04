@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VB Stats">
+<meta name="theme-color" content="#0E131D">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>VB Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E131D; --s1:#141B28; --s2:#182131; --s3:#222D40; --line:#2E3B52;
+  --text:#EEF2F7; --soft:#C3CCD9; --muted:#9AA6B8;
+  --plus:#4DA8FF; --plus-fg:#A9D4FF; --plus-bg:#132A44; --plus-bd:#1F4670;
+  --minus:#FF9447; --minus-fg:#FFC197; --minus-bg:#3A2214; --minus-bd:#5E3519;
+  --num:'Barlow Condensed',system-ui,sans-serif;
+  --body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.4}
+body{padding:env(safe-area-inset-top) 0 0}
+button,input,select{font-family:inherit;font-size:16px;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--plus);outline-offset:2px}
+a{color:var(--plus)}
+#app{max-width:560px;margin:0 auto;padding:14px 16px calc(96px + env(safe-area-inset-bottom))}
+#app.noNav{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+h1{font-family:var(--num);font-weight:700;font-size:32px;line-height:1;margin:0}
+h2{font-size:15px;font-weight:600;margin:0}
+.muted{color:var(--muted)} .soft{color:var(--soft)} .small{font-size:13px}
+.row{display:flex;align-items:center;gap:10px} .between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--s2);border-radius:14px;padding:14px}
+.btn{height:48px;padding:0 16px;border-radius:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn-primary{background:var(--plus);color:#06182B}
+.btn-ghost{border:1px solid var(--line);background:var(--s2);color:var(--text)}
+.btn-warn{background:var(--minus);color:#1A0E05}
+.btn-sm{height:40px;padding:0 12px;font-size:14px;border-radius:10px}
+.btn-block{width:100%}
+.btn:disabled{opacity:.45}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],select{height:48px;border-radius:10px;border:1px solid var(--line);background:var(--s3);padding:0 12px;width:100%;color:var(--text)}
+select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 21px,calc(100% - 13px) 21px;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.big{font-family:var(--num);font-weight:700;font-size:36px;line-height:1}
+.chip{padding:6px 12px;border-radius:14px;background:var(--s2);color:var(--muted);font-size:13px}
+.chip.on{background:var(--plus-bg);color:var(--plus-fg);font-weight:600}
+.seg{display:flex;background:var(--s2);border-radius:12px;padding:4px;gap:4px}
+.seg button{flex:1;height:40px;border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--s3);color:var(--text)}
+
+/* Live */
+.tile{height:88px;border-radius:14px;border:2px solid var(--s3);background:var(--s2);padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;text-align:left;width:100%}
+.tile[aria-pressed=true]{border-color:var(--plus);background:#16304D}
+.tile .n{font-family:var(--num);font-weight:700;font-size:34px;line-height:1}
+.tile .pm{font-family:var(--num);font-weight:700;font-size:20px}
+.tile .nm{font-size:12px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad{background:var(--s1);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.padrow{display:flex;align-items:center;gap:8px}
+.padrow .lb{width:52px;flex-shrink:0;font-size:13px;font-weight:600;color:var(--muted)}
+.padrow .bs{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.sb{height:52px;border-radius:10px;border:1px solid var(--line);background:var(--s3);color:var(--text);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.sb .l{font-size:14px;font-weight:600;line-height:1.1} .sb .v{font-size:11px;opacity:.85}
+.sb.p{background:var(--plus-bg);border-color:var(--plus-bd);color:var(--plus-fg)}
+.sb.m{background:var(--minus-bg);border-color:var(--minus-bd);color:var(--minus-fg)}
+.sb:active{transform:scale(.96)}
+.stepper{display:flex;align-items:center;gap:4px;background:var(--s2);border-radius:12px;padding:4px}
+.stepper button{width:44px;height:44px;border-radius:9px;background:var(--s3);display:flex;align-items:center;justify-content:center}
+.stepper span{min-width:56px;text-align:center;font-family:var(--num);font-size:20px;font-weight:700}
+.dot{width:8px;height:8px;border-radius:4px;display:inline-block}
+
+/* Lists */
+.li{display:flex;align-items:center;gap:12px;background:var(--s2);border-radius:12px;padding:6px 6px 6px 6px;min-height:56px}
+.badge{width:44px;height:44px;border-radius:10px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-family:var(--num);font-weight:700;font-size:24px;flex-shrink:0}
+.grow{flex:1;min-width:0}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw{width:52px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sw span{width:44px;height:26px;border-radius:13px;background:#3A465C;display:flex;align-items:center;padding:3px;justify-content:flex-start}
+.sw span i{width:20px;height:20px;border-radius:10px;background:var(--text);display:block}
+.sw[aria-pressed=true] span{background:#2F7FD0;justify-content:flex-end}
+
+/* Stats */
+.bar{flex:1;height:10px;border-radius:5px;background:var(--s3);overflow:hidden}
+.bar i{display:block;height:10px;border-radius:5px;background:var(--minus)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font-size:12px;color:var(--muted);font-weight:500;text-align:right;padding:4px 4px 6px;border-bottom:1px solid var(--s3)}
+.tbl td{text-align:right;padding:0 4px;height:44px;border-bottom:1px solid #1E2738}
+.tbl th:nth-child(1),.tbl td:nth-child(1),.tbl th:nth-child(2),.tbl td:nth-child(2){text-align:left}
+.tbl td:nth-child(1){font-family:var(--num);font-weight:700;font-size:18px;width:34px}
+.tblwrap{overflow-x:auto}
+
+/* Nav */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:rgba(14,19,29,.96);border-top:1px solid var(--s3);padding:6px 8px calc(6px + env(safe-area-inset-bottom));display:flex;justify-content:center;z-index:5}
+nav.tabs .in{max-width:560px;width:100%;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px}
+nav.tabs button{height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:12px;font-weight:500}
+nav.tabs button[aria-current=page]{color:var(--plus);font-weight:600}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));background:var(--s3);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;font-size:14px;max-width:90vw;z-index:9;display:none}
+textarea{font:inherit;font-size:16px;color:var(--text);border-radius:10px;border:1px solid var(--line);background:var(--s3);padding:10px 12px;width:100%;min-height:88px;resize:vertical}
+.avatar{width:88px;height:88px;border-radius:16px;background:var(--s3) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-family:var(--num);font-weight:700;font-size:40px;flex-shrink:0;color:var(--muted)}
+.badge.ph{background-size:cover;background-position:center}
+.tile.ph{background-size:cover;background-position:center 25%}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;font-size:0;cursor:pointer}
+/* Player card */
+.bcard{border-radius:20px;padding:10px;background:linear-gradient(160deg,#1F4670,#132A44 45%,#3A2214);}
+.bcard .in{border-radius:14px;background:var(--s1);overflow:hidden}
+.bphoto{position:relative;aspect-ratio:4/3.4;background:#16304D center 25%/cover no-repeat;display:flex;align-items:center;justify-content:center}
+.bphoto .ghost{font-family:var(--num);font-weight:700;font-size:160px;color:rgba(169,212,255,.18);line-height:1}
+.bphoto .no{position:absolute;right:12px;bottom:-22px;width:64px;height:64px;border-radius:16px;background:var(--minus);color:#1A0E05;font-family:var(--num);font-weight:700;font-size:36px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px var(--s1)}
+.bbody{padding:16px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.bname{font-family:var(--num);font-weight:700;font-size:34px;line-height:1;letter-spacing:.01em;padding-right:72px}
+.bstrip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--s3);border-radius:12px;overflow:hidden}
+.bstrip div{background:var(--s2);padding:10px 8px;display:flex;flex-direction:column;gap:2px;align-items:center}
+.bstrip b{font-family:var(--num);font-size:26px;font-weight:700;line-height:1}
+.bstrip span{font-size:12px;color:var(--muted)}
+.tbl.plain td:nth-child(1){font-family:var(--body);font-weight:500;font-size:14px;width:auto;white-space:nowrap}
+.tbl.plain th:nth-child(2),.tbl.plain td:nth-child(2){text-align:right}
+.empty{padding:28px 16px;text-align:center;color:var(--soft);background:var(--s2);border-radius:14px}
+@media (prefers-reduced-motion:reduce){.sb:active{transform:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// =====================================================================
+// Firebase web config (project: vbstats-f14b9). Public by design;
+// data access is controlled by firestore.rules.
+// =====================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBqcySW1k_NghYMzJnGK7EyfDVIKJgZQQo",
+  authDomain: "vbstats-f14b9.firebaseapp.com",
+  projectId: "vbstats-f14b9",
+  storageBucket: "vbstats-f14b9.firebasestorage.app",
+  messagingSenderId: "350602303132",
+  appId: "1:350602303132:web:3266544f88a974dca4ff59"
+};
+// =====================================================================
+
+const $app = document.getElementById('app');
+if (firebaseConfig.apiKey.startsWith('PASTE')) {
+  $app.classList.add('noNav');
+  $app.innerHTML = `<div class="stack" style="padding-top:40px"><h1>Almost ready</h1><p class="soft">Paste your Firebase web config into <b>index.html</b> where it says “PASTE YOUR FIREBASE WEB CONFIG HERE”, then reload.</p></div>`;
+  throw new Error('Firebase config missing');
+}
+
+const fb = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+const db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+
+// ---------- Stat definitions (same values as the requirements) ----------
+const STATS = {
+  ace:            { label:'Ace',     sub:'+1',       cat:'Serve',  pm: 1,   name:'Ace' },
+  serviceError:   { label:'Error',   sub:'−1',       cat:'Serve',  pm:-1,   name:'Service error', err:true },
+  serveInPlay:    { label:'In play', sub:'0',        cat:'Serve',  pm: 0,   name:'Serve in play' },
+  passExcellent:  { label:'3',       sub:'Perfect',  cat:'Pass',   pm: 0,   name:'Pass 3', pass:3 },
+  passGood:       { label:'2',       sub:'Good',     cat:'Pass',   pm: 0,   name:'Pass 2', pass:2 },
+  passPlayable:   { label:'1',       sub:'Playable', cat:'Pass',   pm: 0,   name:'Pass 1', pass:1 },
+  receptionError: { label:'0',       sub:'Error',    cat:'Pass',   pm: 0,   name:'Reception error', pass:0, err:true },
+  assist:         { label:'Assist',  sub:'+1',       cat:'Set',    pm: 1,   name:'Assist' },
+  setError:       { label:'Error',   sub:'−1',       cat:'Set',    pm:-1,   name:'Set error', err:true },
+  kill:           { label:'Kill',    sub:'+1',       cat:'Attack', pm: 1,   name:'Kill' },
+  attackError:    { label:'Error',   sub:'−1',       cat:'Attack', pm:-1,   name:'Attack error', err:true },
+  attackAttempt:  { label:'Attempt', sub:'0',        cat:'Attack', pm: 0,   name:'Attack attempt' },
+  blockSolo:      { label:'Solo',    sub:'+1',       cat:'Block',  pm: 1,   name:'Solo block' },
+  blockAssist:    { label:'Assist',  sub:'+½',       cat:'Block',  pm: 0.5, name:'Block assist' },
+  blockError:     { label:'Error',   sub:'−1',       cat:'Block',  pm:-1,   name:'Block error', err:true }
+};
+const PAD = [
+  ['Serve',  ['ace','serviceError','serveInPlay']],
+  ['Pass',   ['passExcellent','passGood','passPlayable','receptionError']],
+  ['Set',    ['assist','setError']],
+  ['Attack', ['kill','attackError','attackAttempt']],
+  ['Block',  ['blockSolo','blockAssist','blockError']]
+];
+const POS = { OH:'Outside hitter', OPP:'Opposite', MB:'Middle blocker', S:'Setter', L:'Libero', DS:'Defensive specialist' };
+const CATS = ['Serve','Pass','Set','Attack','Block'];
+
+function statLine(evs) {
+  const c = {}; for (const e of evs) c[e.type] = (c[e.type] || 0) + 1;
+  const n = t => c[t] || 0;
+  const K = n('kill'), AE = n('attackError'), TA = K + AE + n('attackAttempt');
+  const SA = n('ace'), SE = n('serviceError'), TS = SA + SE + n('serveInPlay');
+  const passN = n('passExcellent') + n('passGood') + n('passPlayable') + n('receptionError');
+  const passSum = 3*n('passExcellent') + 2*n('passGood') + n('passPlayable');
+  const BS = n('blockSolo'), BA = n('blockAssist');
+  let pm = 0; const errs = {};
+  for (const t in c) { if (!STATS[t]) continue; pm += STATS[t].pm * c[t]; if (STATS[t].err) errs[STATS[t].cat] = (errs[STATS[t].cat] || 0) + c[t]; }
+  return { n, K, AE, TA, eff: K - AE, hitPct: TA ? (K - AE) / TA : null,
+    SA, SE, TS, servePct: TS ? (TS - SE) / TS : null,
+    passN, passRating: passN ? passSum / passN : null,
+    AST: n('assist'), SETE: n('setError'), BS, BA, BE: n('blockError'),
+    blocks: BS + 0.5*BA, pts: K + SA + BS + 0.5*BA, pm, errs };
+}
+
+// ---------- Formatting ----------
+const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const num = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+const fmtPM = v => v > 0 ? '+' + num(v) : v < 0 ? '−' + num(Math.abs(v)) : '0';
+const pmColor = v => v > 0 ? 'var(--plus)' : v < 0 ? 'var(--minus)' : 'var(--muted)';
+const fmtHit = v => v == null ? '—' : (v < 0 ? '−' : '') + Math.abs(v).toFixed(3).replace(/^0/, '');
+const fmtRate = v => v == null ? '—' : v.toFixed(2);
+const fmtPct = v => v == null ? '—' : Math.round(v * 100) + '%';
+const toDate = t => t?.toDate ? t.toDate() : (t instanceof Date ? t : null);
+const fmtDate = t => { const d = toDate(t); return d ? d.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : ''; };
+const ICON = {
+  matches:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg>',
+  live:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 3c3.5 3.5 3.5 14.5 0 18M4 8.5c5 2 11 2 16 0M4 15.5c5-2 11-2 16 0"></path></svg>',
+  roster:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5M16 4.6a3.5 3.5 0 010 6.8M18 13.8c2 .8 3.5 3 3.5 6.2"></path></svg>',
+  stats:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>',
+  admin:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"></path></svg>',
+  undo:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"></path><path d="M4 9h11a5 5 0 010 10h-3"></path></svg>',
+  left:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>',
+  right:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>'
+};
+
+// ---------- State ----------
+const S = {
+  user: null, profile: null, authMode: 'signin', authBusy: false,
+  teams: [], seasons: [], teamId: localStorage.getItem('teamId') || null,
+  players: [], matches: [], view: 'matches',
+  matchId: null, events: [], pending: false,
+  set: 1, selected: null, lineup: [], subMode: false, undo: [],
+  editPlayerId: null, showPlayerForm: false, showMatchForm: false,
+  statsScope: 'match', statsSeasonId: null, seasonEvents: null, seasonLoading: false,
+  coachNames: {}, freshForms: false,
+  cardPlayerId: null, cardData: null, formPhoto: undefined
+};
+const unsub = { profile:null, teams:null, seasons:null, players:null, matches:null, events:null };
+const off = k => { if (unsub[k]) { unsub[k](); unsub[k] = null; } };
+const isAdmin = () => S.profile?.role === 'admin';
+const team = () => S.teams.find(t => t.id === S.teamId);
+const match = () => S.matches.find(m => m.id === S.matchId);
+const activePlayers = () => S.players.filter(p => p.isActive).sort((a,b) => a.number - b.number);
+const playerById = id => S.players.find(p => p.id === id);
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.display = 'none', 3200);
+}
+const fail = what => err => { console.error(err); toast(`${what} didn’t save: ${err.code === 'permission-denied' ? 'you don’t have access to do that' : (err.message || err)}`); };
+
+// ---------- Auth & subscriptions ----------
+onAuthStateChanged(auth, user => {
+  S.user = user;
+  ['profile','teams','seasons','players','matches','events'].forEach(off);
+  S.profile = null; S.teams = []; S.players = []; S.matches = []; S.events = [];
+  if (!user) { render(); return; }
+  unsub.profile = onSnapshot(doc(db, 'users', user.uid), snap => {
+    if (!snap.exists()) {
+      if (snap.metadata.fromCache) return;
+      setDoc(doc(db, 'users', user.uid), { name: S.pendingName || user.email.split('@')[0], email: (user.email || '').toLowerCase(), role: 'headCoach' })
+        .catch(fail('Your profile'));
+      return;
+    }
+    const prevRole = S.profile?.role;
+    S.profile = { id: snap.id, ...snap.data() };
+    if (prevRole !== S.profile.role) subTeams();
+    render();
+  });
+  unsub.seasons = onSnapshot(query(collection(db, 'seasons'), orderBy('startDate', 'desc')), snap => {
+    S.seasons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, () => {});
+  render();
+});
+
+function subTeams() {
+  off('teams');
+  const q = isAdmin() ? collection(db, 'teams') : query(collection(db, 'teams'), where('coachIds', 'array-contains', S.user.uid));
+  unsub.teams = onSnapshot(q, snap => {
+    S.teams = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.name.localeCompare(b.name));
+    if (!S.teams.find(t => t.id === S.teamId)) selectTeam(S.teams[0]?.id || null);
+    render();
+  }, fail('Teams'));
+}
+
+function selectTeam(id) {
+  S.teamId = id; if (id) localStorage.setItem('teamId', id);
+  off('players'); off('matches'); closeMatch();
+  S.players = []; S.matches = []; S.coachNames = {};
+  if (!id) { render(); return; }
+  unsub.players = onSnapshot(collection(db, 'teams', id, 'players'), snap => {
+    S.players = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.number - b.number);
+    render();
+  }, fail('Roster'));
+  unsub.matches = onSnapshot(query(collection(db, 'teams', id, 'matches'), orderBy('date', 'desc')), snap => {
+    S.matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, fail('Matches'));
+  if (isAdmin()) loadCoachNames();
+  render();
+}
+
+async function loadCoachNames() {
+  const t = team(); if (!t) return;
+  for (const uid of t.coachIds || []) {
+    if (S.coachNames[uid]) continue;
+    try { const u = await getDoc(doc(db, 'users', uid)); S.coachNames[uid] = u.exists() ? (u.data().name || u.data().email) : 'Unknown user'; }
+    catch { S.coachNames[uid] = 'Unknown user'; }
+  }
+  render();
+}
+
+// ---------- Live match ----------
+function openMatch(id, quiet = false) {
+  closeMatch();
+  S.matchId = id; S.undo = []; S.subMode = false;
+  S.set = Number(localStorage.getItem('set:' + id)) || 1;
+  const saved = JSON.parse(localStorage.getItem('lineup:' + id) || 'null');
+  const act = activePlayers();
+  S.lineup = (saved || act.slice(0, 6).map(p => p.id)).filter(pid => act.some(p => p.id === pid));
+  S.selected = S.lineup[0] || null;
+  unsub.events = onSnapshot(query(collection(db, 'teams', S.teamId, 'matches', id, 'events'), orderBy('clientTime')), { includeMetadataChanges: true }, snap => {
+    S.events = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    S.pending = snap.metadata.hasPendingWrites;
+    render();
+  }, fail('Match stats'));
+  const m = match();
+  if (!quiet && m && m.status === 'scheduled') updateDoc(doc(db, 'teams', S.teamId, 'matches', id), { status: 'live' }).catch(() => {});
+  if (!quiet) S.view = 'live';
+  render();
+}
+function closeMatch() { off('events'); S.matchId = null; S.events = []; S.undo = []; }
+
+function record(type) {
+  if (!S.selected) { toast('Pick a player first'); return; }
+  const ref = doc(collection(db, 'teams', S.teamId, 'matches', S.matchId, 'events'));
+  S.undo.push(ref.id);
+  setDoc(ref, { type, playerId: S.selected, setNumber: S.set, createdBy: S.user.uid, clientTime: Timestamp.now(), serverTime: serverTimestamp() })
+    .catch(fail('Stat'));
+  if (navigator.vibrate) navigator.vibrate(12);
+}
+function undo() {
+  const id = S.undo.pop();
+  if (!id) { toast('Nothing to undo from this device'); return; }
+  deleteDoc(doc(db, 'teams', S.teamId, 'matches', S.matchId, 'events', id)).catch(fail('Undo'));
+}
+
+// ---------- Season stats ----------
+async function loadSeason(seasonId) {
+  S.statsSeasonId = seasonId; S.seasonEvents = null; S.seasonLoading = true; render();
+  try {
+    const ms = await getDocs(query(collection(db, 'teams', S.teamId, 'matches'), where('seasonId', '==', seasonId)));
+    const all = [];
+    for (const m of ms.docs) {
+      const evs = await getDocs(collection(m.ref, 'events'));
+      evs.forEach(e => all.push(e.data()));
+    }
+    S.seasonEvents = all;
+  } catch (e) { fail('Season stats')(e); S.seasonEvents = []; }
+  S.seasonLoading = false; render();
+}
+
+// ---------- CSV export ----------
+function csvFor(events, title) {
+  const H = ['Player','#','Pos','+/-','Pts','K','AE','TA','Hit Eff','Hit %','Aces','SE','Pass Att','Pass Rtg','Ast','Set Err','Blk Solo','Blk Ast','Blk Err'];
+  const q = s => /[",\n]/.test(String(s)) ? `"${String(s).replace(/"/g, '""')}"` : String(s);
+  const line = (name, numb, pos, s) => [q(name), numb, pos, num(s.pm), num(s.pts), s.K, s.AE, s.TA, s.eff,
+    s.hitPct == null ? '' : s.hitPct.toFixed(3), s.SA, s.SE, s.passN, s.passRating == null ? '' : s.passRating.toFixed(2),
+    s.AST, s.SETE, s.BS, s.BA, s.BE].join(',');
+  const ids = [...new Set(events.map(e => e.playerId))];
+  const rows = [q(title), H.join(',')];
+  ids.map(id => playerById(id) || { id, name: 'Removed player', number: '', position: '' })
+     .sort((a,b) => (a.number || 0) - (b.number || 0))
+     .forEach(p => rows.push(line(p.name, p.number, p.position, statLine(events.filter(e => e.playerId === p.id)))));
+  rows.push(line('TEAM', '', '', statLine(events)));
+  return rows.join('\n');
+}
+async function exportCSV(events, title) {
+  const name = title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') + '.csv';
+  const file = new File([csvFor(events, title)], name, { type: 'text/csv' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---------- Photos (stored small in the player doc; no paid Storage needed) ----------
+const photoOf = p => (p && typeof p.photo === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p.photo)) ? p.photo : null;
+async function shrinkPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const w = img.naturalWidth, h = img.naturalHeight, side = Math.min(w, h);
+    const sx = (w - side) / 2, sy = h > w ? (h - side) * 0.2 : 0;   // portrait: keep the head in frame
+    const c = document.createElement('canvas'); c.width = c.height = 360;
+    c.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, 360, 360);
+    return c.toDataURL('image/jpeg', 0.72);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// ---------- Player card data ----------
+async function openCard(id) {
+  S.cardPlayerId = id; S.cardData = null; S.view = 'player'; S.showPlayerForm = false; window.scrollTo(0, 0); render();
+  try {
+    const rows = await Promise.all(S.matches.map(async m => {
+      const snap = await getDocs(query(collection(db, 'teams', S.teamId, 'matches', m.id, 'events'), where('playerId', '==', id)));
+      return { m, evs: snap.docs.map(d => d.data()) };
+    }));
+    if (S.cardPlayerId === id) { S.cardData = rows.filter(r => r.evs.length); render(); }
+  } catch (e) { fail('Player stats')(e); S.cardData = []; render(); }
+}
+
+// ---------- Views ----------
+function viewAuth() {
+  const up = S.authMode === 'signup';
+  return `<div class="stack" style="padding-top:48px;gap:20px">
+    <div class="stack" style="gap:6px"><h1 style="font-size:44px">VB Stats</h1><p class="soft" style="margin:0">Plus/minus scoring for your team.</p></div>
+    <form data-form="auth" class="stack">
+      ${up ? `<label class="f">Your name<input id="au-name" type="text" autocomplete="name" required></label>` : ''}
+      <label class="f">Email<input id="au-email" type="email" autocomplete="email" required></label>
+      <label class="f">Password<input id="au-pass" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" minlength="6" required></label>
+      <button class="btn btn-primary btn-block" ${S.authBusy ? 'disabled' : ''}>${up ? 'Create account' : 'Sign in'}</button>
+    </form>
+    <div class="row between small">
+      <button class="muted" data-act="toggleAuth" style="height:44px">${up ? 'I already have an account' : 'Create an account'}</button>
+      ${up ? '' : `<button class="muted" data-act="reset" style="height:44px">Forgot password</button>`}
+    </div></div>`;
+}
+
+function header(title, extra = '') {
+  const ts = S.teams;
+  return `<div class="row between" style="margin-bottom:14px;align-items:flex-end">
+    <h1>${title}</h1>
+    ${ts.length > 1 ? `<select data-act="team" aria-label="Team" style="width:auto;max-width:55%;height:44px">${ts.map(t => `<option value="${t.id}" ${t.id === S.teamId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`
+      : ts.length === 1 ? `<span class="chip">${esc(ts[0].name)}</span>` : ''}
+  </div>${extra}`;
+}
+
+function viewNoTeam() {
+  return `${header('Welcome')}
+    <div class="empty stack">
+      ${isAdmin() ? `<p style="margin:0">Create your first team to get started.</p><button class="btn btn-primary" data-act="go" data-v="admin">Create a team</button>`
+        : `<p style="margin:0">You’re signed in as <b>${esc(S.user.email)}</b>, but you haven’t been added to a team yet.</p><p class="muted small" style="margin:0">Ask your administrator to add this email to your team.</p>`}
+    </div>`;
+}
+
+function viewMatches() {
+  const seasons = S.seasons;
+  const cur = seasons.find(s => s.isCurrent) || seasons[0];
+  const today = new Date().toISOString().slice(0, 10);
+  const form = S.showMatchForm ? `<form data-form="match" class="card stack">
+      <h2>New match</h2>
+      <label class="f">Opponent<input id="m-opp" type="text" required></label>
+      <div class="grid2">
+        <label class="f">Date<input id="m-date" type="date" value="${today}" required></label>
+        <label class="f">Season<select id="m-season">${seasons.length ? seasons.map(s => `<option value="${s.id}" ${s.id === cur?.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('') : '<option value="">No season</option>'}</select></label>
+      </div>
+      <label class="f">Location<input id="m-loc" type="text" placeholder="Optional"></label>
+      <div class="grid2"><button type="button" class="btn btn-ghost" data-act="cancelMatch">Cancel</button><button class="btn btn-primary">Create match</button></div>
+    </form>` : `<button class="btn btn-primary btn-block" data-act="newMatch">New match</button>`;
+  const list = S.matches.length ? S.matches.map(m => {
+    const st = m.status === 'final' ? 'Final' : m.status === 'live' ? 'In progress' : 'Scheduled';
+    return `<div class="li" style="padding:6px 6px 6px 14px">
+      <button class="grow" data-act="open" data-id="${m.id}" style="text-align:left;min-height:44px">
+        <div class="ell" style="font-weight:600">vs ${esc(m.opponent)}</div>
+        <div class="small muted">${fmtDate(m.date)}${m.location ? ', ' + esc(m.location) : ''}</div>
+      </button>
+      <span class="chip ${m.status === 'live' ? 'on' : ''}">${st}</span>
+    </div>`; }).join('') : `<div class="empty">No matches yet. Create one to start entering stats.</div>`;
+  return `${header('Matches')}<div class="stack">${form}${list}</div>`;
+}
+
+function viewLive() {
+  const m = match();
+  if (!m) return `${header('Live')}<div class="empty stack"><p style="margin:0">Pick a match to start entering stats.</p><button class="btn btn-primary" data-act="go" data-v="matches">Go to matches</button></div>`;
+  const evs = S.events;
+  const tl = statLine(evs);
+  const act = activePlayers();
+  const sel = playerById(S.selected);
+  const sync = S.pending ? (navigator.onLine ? ['var(--minus)', 'Saving…'] : ['var(--minus)', 'Offline, saved on this phone']) : ['var(--plus)', 'Synced'];
+
+  let court;
+  if (S.subMode) {
+    court = `<div class="stack" style="gap:8px">
+      <div class="small soft">Tap players to put them on or take them off the court.</div>
+      <div class="grid3">${act.map(p => { const on = S.lineup.includes(p.id);
+        return `<button class="tile" style="height:64px" aria-pressed="${on}" data-act="toggleLineup" data-id="${p.id}"><span class="n" style="font-size:26px">${p.number}</span><span class="nm">${esc(p.name)}</span></button>`; }).join('')}</div>
+      <button class="btn btn-primary btn-block" data-act="subDone">Done (${S.lineup.length} on court)</button></div>`;
+  } else {
+    const on = S.lineup.map(playerById).filter(Boolean);
+    court = on.length ? `<div class="grid3">${on.map(p => {
+      const v = statLine(evs.filter(e => e.playerId === p.id)).pm;
+      const ph = photoOf(p);
+      return `<button class="tile${ph ? ' ph' : ''}" style="${ph ? `background-image:linear-gradient(rgba(14,19,29,.45),rgba(14,19,29,.88)),url(${ph})` : ''}" aria-pressed="${p.id === S.selected}" data-act="pick" data-id="${p.id}" aria-label="#${p.number} ${esc(p.name)}, plus minus ${fmtPM(v)}">
+        <div class="row between" style="width:100%;align-items:baseline"><span class="n">${p.number}</span><span class="pm" style="color:${pmColor(v)}">${fmtPM(v)}</span></div>
+        <span class="nm">${esc(p.name)}${p.position ? ', ' + p.position : ''}</span></button>`; }).join('')}</div>`
+      : `<div class="empty">No players on court. Tap Sub to choose who’s playing${act.length ? '' : ', or add players in Roster first'}.</div>`;
+  }
+
+  const pad = `<div class="pad">
+    <div class="small muted">${sel ? `Recording for <b style="color:var(--text)">#${sel.number} ${esc(sel.name)}</b>` : 'Pick a player above'}</div>
+    ${PAD.map(([lb, types]) => `<div class="padrow"><div class="lb">${lb}</div><div class="bs">${types.map(t => { const d = STATS[t];
+      return `<button class="sb ${d.pm > 0 ? 'p' : d.pm < 0 ? 'm' : ''}" data-act="stat" data-t="${t}" aria-label="${d.name}${sel ? ' for #' + sel.number : ''}"><span class="l">${d.label}</span><span class="v">${d.sub}</span></button>`; }).join('')}</div></div>`).join('')}
+  </div>`;
+
+  const last = evs[evs.length - 1];
+  const lp = last && playerById(last.playerId);
+  const lastText = last ? `#${lp?.number ?? '?'} ${esc(lp?.name ?? 'Player')}: ${STATS[last.type]?.name} (${fmtPM(STATS[last.type]?.pm ?? 0)}), set ${last.setNumber}` : 'No stats yet this match';
+
+  return `<div class="stack">
+    <div class="row between">
+      <div class="grow"><div class="small muted ell">${esc(teamName())}</div><h1 class="ell" style="font-size:28px">vs ${esc(m.opponent)}</h1></div>
+      <div class="stepper"><button aria-label="Previous set" data-act="setDown">${ICON.left}</button><span>Set ${S.set}</span><button aria-label="Next set" data-act="setUp">${ICON.right}</button></div>
+    </div>
+    <div class="row between small muted">
+      <span class="row" style="gap:8px"><span class="dot" style="background:${sync[0]}"></span>${sync[1]}</span>
+      <span class="row" style="gap:14px"><span>Team +/− <b style="color:var(--text)">${fmtPM(tl.pm)}</b></span><span>Pass <b style="color:var(--text)">${fmtRate(tl.passRating)}</b></span></span>
+    </div>
+    <div class="row between"><h2>On court</h2><button class="btn btn-ghost btn-sm" data-act="sub" style="border-radius:20px">${S.subMode ? 'Cancel' : 'Sub'}</button></div>
+    ${court}
+    ${S.subMode ? '' : pad}
+    <div class="row">
+      <div class="grow card" style="padding:10px 12px"><div class="small muted">Last entry</div><div class="ell" style="font-weight:500">${lastText}</div></div>
+      <button class="btn btn-warn" style="height:56px;padding:0 20px" data-act="undo">${ICON.undo}Undo</button>
+    </div>
+    <div class="grid2">
+      <button class="btn btn-ghost" data-act="go" data-v="stats">Box score</button>
+      ${m.status === 'final' ? `<button class="btn btn-ghost" data-act="reopen">Reopen match</button>` : `<button class="btn btn-ghost" data-act="final">End match</button>`}
+    </div>
+  </div>`;
+}
+const teamName = () => { const t = team(); const s = S.seasons.find(x => x.id === match()?.seasonId); return [t?.name, s?.name].filter(Boolean).join(', '); };
+
+function viewRoster() {
+  const editing = S.editPlayerId ? playerById(S.editPlayerId) : null;
+  const act = S.players.filter(p => p.isActive).length;
+  const photoNow = S.formPhoto === undefined ? photoOf(editing) : S.formPhoto;
+  const posOpts = sel => Object.entries(POS).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${v}</option>`).join('');
+  const form = S.showPlayerForm ? `<form data-form="player" class="card stack">
+      <h2>${editing ? 'Edit player' : 'Add player'}</h2>
+      <div class="row" style="gap:14px">
+        <div class="avatar" style="${photoNow ? `background-image:url(${photoNow})` : ''}">${photoNow ? '' : (editing?.number ?? '#')}</div>
+        <div class="stack" style="gap:8px">
+          <label class="btn btn-ghost btn-sm filebtn">${photoNow ? 'Change photo' : 'Add photo'}<input id="p-photo-file" type="file" accept="image/*" data-act="photo" aria-label="Choose player photo"></label>
+          ${photoNow ? `<button type="button" class="btn btn-ghost btn-sm" data-act="removePhoto">Remove photo</button>` : ''}
+        </div>
+      </div>
+      <label class="f">Name<input id="p-name" type="text" value="${esc(editing?.name || '')}" required></label>
+      <div class="grid2">
+        <label class="f">Number<input id="p-num" type="number" inputmode="numeric" min="0" max="99" value="${editing?.number ?? ''}" required></label>
+        <label class="f">Position<select id="p-pos">${posOpts(editing?.position)}</select></label>
+      </div>
+      <div class="grid2">
+        <label class="f">Second position<select id="p-pos2"><option value="">None</option>${posOpts(editing?.secondaryPosition)}</select></label>
+        <label class="f">Dominant hand<select id="p-hand"><option value="">Not set</option><option value="Right" ${editing?.hand === 'Right' ? 'selected' : ''}>Right</option><option value="Left" ${editing?.hand === 'Left' ? 'selected' : ''}>Left</option></select></label>
+      </div>
+      <div class="grid2">
+        <label class="f">Grad year<input id="p-grad" type="number" inputmode="numeric" min="2000" max="2100" placeholder="2028" value="${editing?.gradYear ?? ''}"></label>
+        <label class="f">Height<input id="p-height" type="text" placeholder="5'10&quot;" value="${esc(editing?.height || '')}"></label>
+      </div>
+      <label class="f">Coach notes<textarea id="p-notes" placeholder="Strengths, things to work on">${esc(editing?.notes || '')}</textarea></label>
+      <div class="grid2"><button type="button" class="btn btn-ghost" data-act="cancelPlayer">Cancel</button><button class="btn btn-primary">${editing ? 'Save player' : 'Add player'}</button></div>
+      ${editing && isAdmin() ? `<button type="button" class="btn btn-ghost" style="color:var(--minus-fg)" data-act="deletePlayer" data-id="${editing.id}">Delete player</button>` : ''}
+    </form>` : `<button class="btn btn-primary btn-block" data-act="addPlayer">Add player</button>`;
+  const list = S.players.length ? S.players.map(p => `<div class="li" style="opacity:${p.isActive ? 1 : .55}">
+      ${photoOf(p) ? `<div class="badge ph" style="background-image:url(${photoOf(p)})" aria-hidden="true"></div>` : `<div class="badge">${p.number}</div>`}
+      <button class="grow" style="text-align:left;min-height:44px" data-act="card" data-id="${p.id}" aria-label="Open ${esc(p.name)}'s player card">
+        <div class="ell" style="font-weight:600">${esc(p.name)}</div><div class="small muted">#${p.number}, ${POS[p.position] || p.position || ''}</div>
+      </button>
+      <button class="sw" aria-pressed="${p.isActive}" aria-label="${esc(p.name)} active" data-act="toggleActive" data-id="${p.id}"><span><i></i></span></button>
+    </div>`).join('') : `<div class="empty">No players yet. Add your roster to start tracking.</div>`;
+  return `${header('Roster', `<div class="row" style="margin-bottom:12px"><span class="chip on">${act} active</span><span class="chip">${S.players.length - act} inactive</span></div>`)}
+    <div class="stack">${form}<div class="stack" style="gap:6px">${list}</div></div>`;
+}
+
+function viewCard() {
+  const p = playerById(S.cardPlayerId);
+  if (!p) return `${header('Player')}<div class="empty">That player isn’t on this team.</div>`;
+  if (S.showPlayerForm) return viewRoster();
+  const ph = photoOf(p);
+  const bio = [ [POS[p.position], p.secondaryPosition && POS[p.secondaryPosition]].filter(Boolean).join(' / '),
+    p.gradYear ? `Class of ${p.gradYear}` : '', p.height || '', p.hand ? `${p.hand}-handed` : '' ].filter(Boolean).join(', ');
+  const d = S.cardData;
+  let body;
+  if (!d) body = `<div class="empty">Loading stats…</div>`;
+  else if (!d.length) body = `<div class="empty">No stats yet. They’ll show up here after ${esc(p.name)} plays a match.</div>`;
+  else {
+    const all = statLine(d.flatMap(r => r.evs));
+    const bySeason = {};
+    d.forEach(r => (bySeason[r.m.seasonId || ''] ||= []).push(r));
+    const seasonRows = Object.entries(bySeason).map(([sid, rs]) => {
+      const sn = S.seasons.find(x => x.id === sid);
+      return { name: sn?.name || 'No season', start: toDate(sn?.startDate)?.getTime() || 0, gp: rs.length, s: statLine(rs.flatMap(r => r.evs)) };
+    }).sort((a, b) => b.start - a.start);
+    const games = [...d].sort((a, b) => (toDate(b.m.date)?.getTime() || 0) - (toDate(a.m.date)?.getTime() || 0));
+    const shortDate = t => { const x = toDate(t); return x ? x.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' }) : ''; };
+    body = `
+      <div class="card"><h2 style="margin-bottom:8px">By season</h2><div class="tblwrap"><table class="tbl plain">
+        <thead><tr><th>Season</th><th>M</th><th>+/−</th><th>Pts</th><th>K</th><th>Hit</th><th>Pass</th><th>Ace</th><th>Ast</th><th>Blk</th></tr></thead><tbody>
+        ${seasonRows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.gp}</td><td style="font-weight:700;color:${pmColor(r.s.pm)}">${fmtPM(r.s.pm)}</td><td>${num(r.s.pts)}</td><td>${r.s.K}</td><td>${fmtHit(r.s.hitPct)}</td><td>${fmtRate(r.s.passRating)}</td><td>${r.s.SA}</td><td>${r.s.AST}</td><td>${num(r.s.blocks)}</td></tr>`).join('')}
+        ${seasonRows.length > 1 ? `<tr><td style="font-weight:700">Career</td><td>${d.length}</td><td style="font-weight:700;color:${pmColor(all.pm)}">${fmtPM(all.pm)}</td><td>${num(all.pts)}</td><td>${all.K}</td><td>${fmtHit(all.hitPct)}</td><td>${fmtRate(all.passRating)}</td><td>${all.SA}</td><td>${all.AST}</td><td>${num(all.blocks)}</td></tr>` : ''}
+      </tbody></table></div></div>
+      <div class="card"><h2 style="margin-bottom:8px">Game log</h2><div class="tblwrap"><table class="tbl plain">
+        <thead><tr><th>Match</th><th>+/−</th><th>Pts</th><th>K</th><th>E</th><th>Hit</th><th>Pass</th><th>Ace</th><th>Blk</th></tr></thead><tbody>
+        ${games.map(r => { const g = statLine(r.evs); return `<tr><td><button data-act="openFromCard" data-id="${r.m.id}" style="text-align:left;min-height:44px;color:var(--text)"><div class="ell" style="max-width:120px">vs ${esc(r.m.opponent)}</div><div class="small muted">${shortDate(r.m.date)}</div></button></td><td style="font-weight:700;color:${pmColor(g.pm)}">${fmtPM(g.pm)}</td><td>${num(g.pts)}</td><td>${g.K}</td><td>${g.AE}</td><td>${fmtHit(g.hitPct)}</td><td>${fmtRate(g.passRating)}</td><td>${g.SA}</td><td>${num(g.blocks)}</td></tr>`; }).join('')}
+      </tbody></table></div></div>`;
+    S._cardTotals = all;
+  }
+  const t = d && d.length ? statLine(d.flatMap(r => r.evs)) : null;
+  const strip = [['+/−', t ? fmtPM(t.pm) : '—', t ? pmColor(t.pm) : ''], ['Points', t ? num(t.pts) : '—'], ['Kills', t ? t.K : '—'],
+                 ['Hit %', t ? fmtHit(t.hitPct) : '—'], ['Pass', t ? fmtRate(t.passRating) : '—'], ['Aces', t ? t.SA : '—']];
+  return `<div class="row between" style="margin-bottom:12px">
+      <button class="btn btn-ghost btn-sm" data-act="go" data-v="roster">${ICON.left}Roster</button>
+      <button class="btn btn-ghost btn-sm" data-act="editPlayer" data-id="${p.id}">Edit</button>
+    </div>
+    <div class="stack">
+      <div class="bcard"><div class="in">
+        <div class="bphoto" style="${ph ? `background-image:url(${ph})` : ''}">${ph ? '' : `<span class="ghost">${p.number}</span>`}<div class="no">${p.number}</div></div>
+        <div class="bbody">
+          <div class="bname">${esc(p.name)}</div>
+          <div class="small soft">${esc(bio) || 'Add grad year, height, and more with Edit.'}</div>
+          <div class="small muted">${esc(team()?.name || '')}${d && d.length ? `, ${d.length} match${d.length === 1 ? '' : 'es'} played` : ''}${p.isActive ? '' : ', inactive'}</div>
+          <div class="bstrip">${strip.map(([l, v, c]) => `<div><b style="${c ? 'color:' + c : ''}">${v}</b><span>${l}</span></div>`).join('')}</div>
+        </div>
+      </div></div>
+      ${body}
+      ${p.notes ? `<div class="card stack" style="gap:6px"><h2>Coach notes</h2><div class="soft" style="white-space:pre-wrap">${esc(p.notes)}</div></div>` : ''}
+    </div>`;
+}
+
+function viewStats() {
+  const seasonMode = S.statsScope === 'season';
+  let evs, title, body = '';
+  const seg = `<div class="seg" style="margin-bottom:12px"><button aria-pressed="${!seasonMode}" data-act="scope" data-v="match">This match</button><button aria-pressed="${seasonMode}" data-act="scope" data-v="season">Season</button></div>`;
+  if (seasonMode) {
+    const seasons = S.seasons;
+    if (!seasons.length) return `${header('Stats')}${seg}<div class="empty">No seasons yet. An administrator can create one in Admin.</div>`;
+    const sid = S.statsSeasonId || (seasons.find(s => s.isCurrent) || seasons[0]).id;
+    if (S.statsSeasonId !== sid && !S.seasonLoading) { queueMicrotask(() => loadSeason(sid)); }
+    const picker = `<label class="f" style="margin-bottom:12px">Season<select data-act="pickSeason">${seasons.map(s => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+    if (S.seasonLoading || !S.seasonEvents) return `${header('Stats')}${seg}${picker}<div class="empty">Loading season stats…</div>`;
+    evs = S.seasonEvents; title = `${team()?.name || 'Team'} ${seasons.find(s => s.id === sid)?.name || ''} season`;
+    body = picker;
+  } else {
+    const m = match() || S.matches[0];
+    if (!m) return `${header('Stats')}${seg}<div class="empty">No matches yet.</div>`;
+    if (!match()) { queueMicrotask(() => openMatchQuiet(m.id)); return `${header('Stats')}${seg}<div class="empty">Loading…</div>`; }
+    evs = S.events; title = `vs ${m.opponent} ${fmtDate(m.date)}`;
+    body = `<div class="small muted" style="margin-bottom:12px">vs ${esc(m.opponent)}, ${fmtDate(m.date)}</div>`;
+  }
+  const s = statLine(evs);
+  const maxErr = Math.max(1, ...CATS.map(c => s.errs[c] || 0));
+  const errTotal = CATS.reduce((a, c) => a + (s.errs[c] || 0), 0);
+  const ids = [...new Set(evs.map(e => e.playerId))];
+  const rows = ids.map(id => { const p = playerById(id) || { name: 'Removed player', number: '' }; return { p, s: statLine(evs.filter(e => e.playerId === id)) }; })
+    .sort((a, b) => b.s.pm - a.s.pm);
+  return `${header('Stats')}${seg}${body}<div class="stack">
+    <button class="btn btn-ghost btn-block" data-act="csv" ${evs.length ? '' : 'disabled'}>Export CSV</button>
+    <div class="grid2">
+      <div class="card stack" style="gap:4px"><span class="small muted">Hitting</span><span class="big">${fmtHit(s.hitPct)}</span><span class="small soft">${s.K} K, ${s.AE} E, ${s.TA} TA</span><span class="small" style="color:var(--plus-fg)">Efficiency ${fmtPM(s.eff)}</span></div>
+      <div class="card stack" style="gap:4px"><span class="small muted">Passing</span><span class="big">${fmtRate(s.passRating)}</span><span class="small soft">${s.passN} attempts</span><span class="small soft">3s ${s.n('passExcellent')}, 2s ${s.n('passGood')}, 1s ${s.n('passPlayable')}, 0s ${s.n('receptionError')}</span></div>
+      <div class="card stack" style="gap:4px"><span class="small muted">Serving</span><span class="big">${fmtPct(s.servePct)}</span><span class="small soft">${s.SA} aces, ${s.SE} errors</span><span class="small soft">${s.TS} serves</span></div>
+      <div class="card stack" style="gap:4px"><span class="small muted">Blocking</span><span class="big">${num(s.blocks)}</span><span class="small soft">${s.BS} solo, ${s.BA} assists</span><span class="small" style="color:var(--minus-fg)">${s.BE} block errors</span></div>
+    </div>
+    <div class="card stack" style="gap:10px">
+      <div class="row between"><h2>Errors by category</h2><span class="small muted">${errTotal} total</span></div>
+      ${CATS.map(c => `<div class="row"><span class="small soft" style="width:56px">${c}</span><span class="bar"><i style="width:${Math.round((s.errs[c] || 0) / maxErr * 100)}%"></i></span><span class="small" style="width:24px;text-align:right;font-weight:600">${s.errs[c] || 0}</span></div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="row between" style="margin-bottom:6px"><h2>Players</h2><span class="small muted">Sorted by +/−</span></div>
+      ${rows.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Player</th><th>+/−</th><th>Pts</th><th>K</th><th>Hit</th><th>Pass</th><th>Ace</th><th>Ast</th><th>Blk</th></tr></thead><tbody>
+        ${rows.map(({ p, s }) => `<tr><td>${p.number}</td><td class="ell" style="max-width:110px">${esc(p.name)}</td><td style="font-weight:700;color:${pmColor(s.pm)}">${fmtPM(s.pm)}</td><td>${num(s.pts)}</td><td>${s.K}</td><td>${fmtHit(s.hitPct)}</td><td>${fmtRate(s.passRating)}</td><td>${s.SA}</td><td>${s.AST}</td><td>${num(s.blocks)}</td></tr>`).join('')}
+      </tbody></table></div>` : `<div class="muted small">No stats entered yet.</div>`}
+    </div>
+  </div>`;
+}
+function openMatchQuiet(id) { openMatch(id, true); }
+
+function viewAdmin() {
+  const t = team();
+  const today = new Date().toISOString().slice(0, 10);
+  return `${header('Admin')}<div class="stack">
+    <form data-form="team" class="card stack"><h2>Create team</h2>
+      <label class="f">Team name<input id="t-name" type="text" required></label>
+      <button class="btn btn-primary">Create team</button></form>
+    ${t ? `<form data-form="coach" class="card stack"><h2>Coaches on ${esc(t.name)}</h2>
+      ${(t.coachIds || []).map(uid => `<div class="row between"><span class="ell">${esc(S.coachNames[uid] || '…')}${uid === S.user.uid ? ' (you)' : ''}</span>${uid === S.user.uid ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="removeCoach" data-id="${uid}">Remove</button>`}</div>`).join('') || '<span class="muted small">No coaches yet.</span>'}
+      <label class="f">Add coach by email<input id="c-email" type="email" placeholder="They must create an account first" required></label>
+      <button class="btn btn-primary">Add coach</button></form>` : ''}
+    <form data-form="season" class="card stack"><h2>Seasons</h2>
+      ${S.seasons.map(s => `<div class="row between"><span>${esc(s.name)}</span>${s.isCurrent ? '<span class="chip on">Current</span>' : `<button type="button" class="btn btn-ghost btn-sm" data-act="makeCurrent" data-id="${s.id}">Make current</button>`}</div>`).join('') || '<span class="muted small">No seasons yet.</span>'}
+      <div class="grid2"><label class="f">New season<input id="s-name" type="text" placeholder="Fall 2026" required></label><label class="f">Start date<input id="s-date" type="date" value="${today}"></label></div>
+      <button class="btn btn-primary">Create season</button></form>
+    <div class="card stack"><h2>Account</h2><span class="small soft">${esc(S.user.email)}, administrator</span>
+      <button class="btn btn-ghost" data-act="signout">Sign out</button></div>
+  </div>`;
+}
+
+function nav() {
+  const tabs = [['matches','Matches'],['live','Live'],['roster','Roster'],['stats','Stats']];
+  tabs.push(isAdmin() ? ['admin','Admin'] : ['account','Account']);
+  return `<nav class="tabs" aria-label="Main"><div class="in">${tabs.map(([k, l]) =>
+    `<button data-act="go" data-v="${k}" ${S.view === k || (k === 'roster' && S.view === 'player') ? 'aria-current="page"' : ''}>${ICON[k] || ICON.admin}${l}</button>`).join('')}</div></nav>`;
+}
+function viewAccount() {
+  return `${header('Account')}<div class="card stack"><span>${esc(S.profile?.name || '')}</span><span class="small soft">${esc(S.user.email)}, head coach</span>
+    <button class="btn btn-ghost" data-act="signout">Sign out</button></div>`;
+}
+
+function render() {
+  const saved = {}; let focusId = document.activeElement?.id;
+  if (!S.freshForms) $app.querySelectorAll('input[id]:not([type=file]),select[id],textarea[id]').forEach(el => saved[el.id] = el.value);
+  S.freshForms = false;
+  let html;
+  if (!S.user) { html = viewAuth(); $app.classList.add('noNav'); }
+  else if (!S.profile) { html = `<div class="empty" style="margin-top:40px">Loading…</div>`; $app.classList.add('noNav'); }
+  else if (!S.teamId && S.view !== 'admin' && S.view !== 'account') { html = viewNoTeam() + nav(); $app.classList.remove('noNav'); }
+  else {
+    $app.classList.remove('noNav');
+    html = ({ matches: viewMatches, live: viewLive, roster: viewRoster, player: viewCard, stats: viewStats, admin: viewAdmin, account: viewAccount }[S.view] || viewMatches)() + nav();
+  }
+  $app.innerHTML = html;
+  for (const id in saved) { const el = document.getElementById(id); if (el) el.value = saved[id]; }
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+}
+
+// ---------- Events ----------
+document.addEventListener('click', async e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.tagName === 'SELECT') return;
+  const a = el.dataset.act, id = el.dataset.id;
+  const tid = S.teamId;
+  switch (a) {
+    case 'toggleAuth': S.authMode = S.authMode === 'signin' ? 'signup' : 'signin'; S.freshForms = true; render(); break;
+    case 'reset': { const em = document.getElementById('au-email').value.trim(); if (!em) { toast('Enter your email first'); break; }
+      sendPasswordResetEmail(auth, em).then(() => toast('Password reset email sent')).catch(err => toast(err.message)); break; }
+    case 'signout': closeMatch(); signOut(auth); break;
+    case 'go': S.view = el.dataset.v; if (S.view === 'admin') loadCoachNames(); window.scrollTo(0, 0); render(); break;
+    case 'newMatch': S.showMatchForm = true; S.freshForms = true; render(); document.getElementById('m-opp')?.focus(); break;
+    case 'cancelMatch': S.showMatchForm = false; render(); break;
+    case 'open': openMatch(id); window.scrollTo(0, 0); break;
+    case 'pick': S.selected = id; render(); break;
+    case 'stat': record(el.dataset.t); break;
+    case 'undo': undo(); break;
+    case 'setDown': S.set = Math.max(1, S.set - 1); localStorage.setItem('set:' + S.matchId, S.set); render(); break;
+    case 'setUp': S.set = Math.min(5, S.set + 1); localStorage.setItem('set:' + S.matchId, S.set); render(); break;
+    case 'sub': S.subMode = !S.subMode; render(); break;
+    case 'toggleLineup': S.lineup = S.lineup.includes(id) ? S.lineup.filter(x => x !== id) : [...S.lineup, id]; render(); break;
+    case 'subDone':
+      S.subMode = false; localStorage.setItem('lineup:' + S.matchId, JSON.stringify(S.lineup));
+      if (!S.lineup.includes(S.selected)) S.selected = S.lineup[0] || null; render(); break;
+    case 'final': if (confirm('End this match? You can reopen it later.')) updateDoc(doc(db, 'teams', tid, 'matches', S.matchId), { status: 'final' }).catch(fail('Match')); break;
+    case 'reopen': updateDoc(doc(db, 'teams', tid, 'matches', S.matchId), { status: 'live' }).catch(fail('Match')); break;
+    case 'card': openCard(id); break;
+    case 'openFromCard': openMatch(id); window.scrollTo(0, 0); break;
+    case 'removePhoto': S.formPhoto = null; render(); break;
+    case 'addPlayer': S.formPhoto = undefined; S.view = 'roster'; S.editPlayerId = null; S.showPlayerForm = true; S.freshForms = true; render(); document.getElementById('p-name')?.focus(); break;
+    case 'editPlayer': S.formPhoto = undefined; S.editPlayerId = id; S.showPlayerForm = true; S.freshForms = true; render(); window.scrollTo(0, 0); break;
+    case 'cancelPlayer': S.showPlayerForm = false; S.editPlayerId = null; S.formPhoto = undefined; render(); break;
+    case 'toggleActive': { const p = playerById(id); updateDoc(doc(db, 'teams', tid, 'players', id), { isActive: !p.isActive }).catch(fail('Player')); break; }
+    case 'deletePlayer': if (confirm('Delete this player? Their past stats stay in team totals. Making them inactive is usually better.')) {
+      deleteDoc(doc(db, 'teams', tid, 'players', id)).catch(fail('Player')); S.showPlayerForm = false; S.editPlayerId = null; render(); } break;
+    case 'scope': S.statsScope = el.dataset.v; render(); break;
+    case 'csv': {
+      const season = S.statsScope === 'season';
+      const m = match();
+      const title = season ? `${team()?.name || 'Team'} ${S.seasons.find(s => s.id === S.statsSeasonId)?.name || ''} season` : `vs ${m?.opponent || ''} ${fmtDate(m?.date)}`;
+      exportCSV(season ? S.seasonEvents || [] : S.events, title); break; }
+    case 'removeCoach': if (confirm('Remove this coach from the team?')) updateDoc(doc(db, 'teams', tid), { coachIds: arrayRemove(id) }).catch(fail('Coach')); break;
+    case 'makeCurrent':
+      for (const s of S.seasons) updateDoc(doc(db, 'seasons', s.id), { isCurrent: s.id === id }).catch(fail('Season'));
+      break;
+  }
+});
+
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset.act === 'team') { selectTeam(el.value); }
+  if (el.dataset.act === 'pickSeason') { loadSeason(el.value); }
+  if (el.dataset.act === 'photo' && el.files && el.files[0]) {
+    shrinkPhoto(el.files[0]).then(d => { S.formPhoto = d; render(); }).catch(() => toast('That photo couldn’t be read. Try a JPG or PNG.'));
+  }
+});
+
+document.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target.dataset.form, v = id => document.getElementById(id)?.value.trim();
+  try {
+    if (f === 'auth') {
+      S.authBusy = true; render();
+      const em = v('au-email'), pw = document.getElementById('au-pass').value;
+      try {
+        if (S.authMode === 'signup') { S.pendingName = v('au-name'); await createUserWithEmailAndPassword(auth, em, pw); }
+        else await signInWithEmailAndPassword(auth, em, pw);
+      } catch (err) {
+        const map = { 'auth/invalid-credential': 'Email or password is incorrect', 'auth/email-already-in-use': 'That email already has an account. Sign in instead.', 'auth/weak-password': 'Use at least 6 characters for the password' };
+        toast(map[err.code] || err.message);
+      }
+      S.authBusy = false; render(); return;
+    }
+    if (f === 'match') {
+      const ref = doc(collection(db, 'teams', S.teamId, 'matches'));
+      const d = new Date(v('m-date') + 'T12:00:00');
+      setDoc(ref, { opponent: v('m-opp'), date: Timestamp.fromDate(d), location: v('m-loc') || '', seasonId: v('m-season') || '', status: 'scheduled' }).catch(fail('Match'));
+      S.showMatchForm = false; S.freshForms = true; render(); return;
+    }
+    if (f === 'player') {
+      const gy = v('p-grad');
+      const data = { name: v('p-name'), number: Number(v('p-num')), position: v('p-pos'), secondaryPosition: v('p-pos2') || '',
+        hand: v('p-hand') || '', gradYear: gy ? Number(gy) : null, height: v('p-height') || '', notes: v('p-notes') || '' };
+      if (S.formPhoto !== undefined) data.photo = S.formPhoto;
+      if (S.players.some(p => p.number === data.number && p.id !== S.editPlayerId && p.isActive)) { toast(`#${data.number} is already taken by an active player`); return; }
+      if (S.editPlayerId) updateDoc(doc(db, 'teams', S.teamId, 'players', S.editPlayerId), data).catch(fail('Player'));
+      else addDoc(collection(db, 'teams', S.teamId, 'players'), { ...data, isActive: true }).catch(fail('Player'));
+      toast(S.editPlayerId ? 'Player saved' : `${data.name} added`);
+      const back = S.view === 'player' ? S.editPlayerId : null;
+      S.editPlayerId = null; S.showPlayerForm = false; S.formPhoto = undefined; S.freshForms = true;
+      if (back) S.cardPlayerId = back;
+      render(); return;
+    }
+    if (f === 'team') {
+      const ref = await addDoc(collection(db, 'teams'), { name: v('t-name'), coachIds: [S.user.uid], createdAt: Timestamp.now() });
+      toast('Team created'); S.freshForms = true; selectTeam(ref.id); return;
+    }
+    if (f === 'coach') {
+      const em = v('c-email').toLowerCase();
+      const r = await getDocs(query(collection(db, 'users'), where('email', '==', em)));
+      if (r.empty) { toast('No account with that email. Ask the coach to create one first.'); return; }
+      await updateDoc(doc(db, 'teams', S.teamId), { coachIds: arrayUnion(r.docs[0].id) });
+      S.coachNames[r.docs[0].id] = r.docs[0].data().name || em;
+      toast('Coach added'); S.freshForms = true; render(); return;
+    }
+    if (f === 'season') {
+      const first = !S.seasons.length;
+      const d = v('s-date') ? new Date(v('s-date') + 'T12:00:00') : new Date();
+      await addDoc(collection(db, 'seasons'), { name: v('s-name'), startDate: Timestamp.fromDate(d), isCurrent: first });
+      toast('Season created'); S.freshForms = true; render(); return;
+    }
+  } catch (err) { fail('That')(err); }
+});
+
+window.addEventListener('online', render);
+window.addEventListener('offline', render);
+render();
+</script>
+</body>
+</html>
