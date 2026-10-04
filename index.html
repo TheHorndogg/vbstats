@@ -548,7 +548,10 @@ function viewRoster() {
       <div class="row" style="gap:14px">
         <div class="avatar" style="${photoNow ? `background-image:url(${photoNow})` : ''}">${photoNow ? '' : (editing?.number ?? '#')}</div>
         <div class="stack" style="gap:8px">
-          <label class="btn btn-ghost btn-sm filebtn">${photoNow ? 'Change photo' : 'Add photo'}<input id="p-photo-file" type="file" accept="image/*" data-act="photo" aria-label="Choose player photo"></label>
+          <div class="row" style="gap:8px">
+            <label class="btn btn-primary btn-sm filebtn">Take photo<input id="p-photo-cam" type="file" accept="image/*" capture="environment" data-act="photo" aria-label="Take player photo with camera"></label>
+            <label class="btn btn-ghost btn-sm filebtn">${photoNow ? 'Choose another' : 'Choose photo'}<input id="p-photo-file" type="file" accept="image/*" data-act="photo" aria-label="Choose player photo from library"></label>
+          </div>
           ${photoNow ? `<button type="button" class="btn btn-ghost btn-sm" data-act="removePhoto">Remove photo</button>` : ''}
         </div>
       </div>
