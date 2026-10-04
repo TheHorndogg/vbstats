@@ -133,7 +133,7 @@ textarea{font:inherit;font-size:16px;color:var(--text);border-radius:10px;border
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, terminate, clearIndexedDbPersistence, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // =====================================================================
 // Firebase web config (project: vbstats-f14b9). Public by design;
@@ -158,7 +158,25 @@ if (firebaseConfig.apiKey.startsWith('PASTE')) {
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
-const db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+// iPhone/iPad (especially home-screen apps) have unreliable IndexedDB, which can leave the
+// on-device cache stuck so new data never shows. Use an in-memory cache there instead.
+// Stats still queue while offline as long as the app stays open.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const useDiskCache = !isIOS && localStorage.getItem('cacheMode') !== 'memory';
+const db = initializeFirestore(fb, { localCache: useDiskCache
+  ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  : memoryLocalCache() });
+
+// Show any unexpected error on screen instead of failing silently.
+window.addEventListener('error', e => toast('Something went wrong: ' + (e.message || 'unknown error')));
+window.addEventListener('unhandledrejection', e => toast('Something went wrong: ' + (e.reason?.message || e.reason || 'unknown error')));
+
+async function resetDevice() {
+  if (!confirm('Clear saved data on this device and reload? Anything not yet synced on this device will be lost. Data already in the cloud is safe.')) return;
+  try { await terminate(db); await clearIndexedDbPersistence(db); } catch (e) { console.warn(e); }
+  Object.keys(localStorage).filter(k => k !== 'cacheMode').forEach(k => localStorage.removeItem(k));
+  location.reload();
+}
 
 // ---------- Stat definitions (same values as the requirements) ----------
 const STATS = {
@@ -703,6 +721,7 @@ function viewAdmin() {
       <button class="btn btn-primary">Create season</button></form>
     <div class="card stack"><h2>Account</h2><span class="small soft">${esc(S.user.email)}, administrator</span>
       <button class="btn btn-ghost" data-act="signout">Sign out</button></div>
+    ${deviceCard()}
   </div>`;
 }
 
@@ -712,9 +731,16 @@ function nav() {
   return `<nav class="tabs" aria-label="Main"><div class="in">${tabs.map(([k, l]) =>
     `<button data-act="go" data-v="${k}" ${S.view === k || (k === 'roster' && S.view === 'player') ? 'aria-current="page"' : ''}>${ICON[k] || ICON.admin}${l}</button>`).join('')}</div></nav>`;
 }
+function deviceCard() {
+  return `<div class="card stack"><h2>This device</h2>
+    <span class="small soft">Signed in as ${esc(S.user.email)} (${isAdmin() ? 'administrator' : 'head coach'}). Teams you can see: ${S.teams.length}.</span>
+    <span class="small muted">If data from another phone or computer isn’t showing up here, reset this device. Cloud data isn’t affected.</span>
+    <button class="btn btn-ghost" data-act="reload">Reload app</button>
+    <button class="btn btn-ghost" data-act="resetDevice">Reset this device</button></div>`;
+}
 function viewAccount() {
-  return `${header('Account')}<div class="card stack"><span>${esc(S.profile?.name || '')}</span><span class="small soft">${esc(S.user.email)}, head coach</span>
-    <button class="btn btn-ghost" data-act="signout">Sign out</button></div>`;
+  return `${header('Account')}<div class="stack"><div class="card stack"><span>${esc(S.profile?.name || '')}</span><span class="small soft">${esc(S.user.email)}, head coach</span>
+    <button class="btn btn-ghost" data-act="signout">Sign out</button></div>${deviceCard()}</div>`;
 }
 
 function render() {
@@ -744,6 +770,8 @@ document.addEventListener('click', async e => {
     case 'reset': { const em = document.getElementById('au-email').value.trim(); if (!em) { toast('Enter your email first'); break; }
       sendPasswordResetEmail(auth, em).then(() => toast('Password reset email sent')).catch(err => toast(err.message)); break; }
     case 'signout': closeMatch(); signOut(auth); break;
+    case 'reload': location.reload(); break;
+    case 'resetDevice': resetDevice(); break;
     case 'go': S.view = el.dataset.v; if (S.view === 'admin') loadCoachNames(); window.scrollTo(0, 0); render(); break;
     case 'newMatch': S.showMatchForm = true; S.freshForms = true; render(); document.getElementById('m-opp')?.focus(); break;
     case 'cancelMatch': S.showMatchForm = false; render(); break;
