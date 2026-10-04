@@ -133,7 +133,7 @@ textarea{font:inherit;font-size:16px;color:var(--text);border-radius:10px;border
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, terminate, clearIndexedDbPersistence, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp, Timestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, terminate, clearIndexedDbPersistence, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, serverTimestamp, Timestamp, arrayUnion, arrayRemove, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // =====================================================================
 // Firebase web config (project: vbstats-f14b9). Public by design;
@@ -177,6 +177,16 @@ async function resetDevice() {
   Object.keys(localStorage).filter(k => k !== 'cacheMode').forEach(k => localStorage.removeItem(k));
   location.reload();
 }
+
+// ---------- Invite links (?invite=TOKEN&team=NAME&email=EMAIL) ----------
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('invite')) {
+    localStorage.setItem('pendingInvite', JSON.stringify({ token: q.get('invite'), team: q.get('team') || '', email: q.get('email') || '' }));
+    history.replaceState(null, '', location.pathname);
+  }
+})();
+const pendingInvite = () => { try { return JSON.parse(localStorage.getItem('pendingInvite') || 'null'); } catch { return null; } };
 
 // ---------- Stat definitions (same values as the requirements) ----------
 const STATS = {
@@ -246,7 +256,7 @@ const ICON = {
 
 // ---------- State ----------
 const S = {
-  user: null, profile: null, authMode: 'signin', authBusy: false,
+  user: null, profile: null, authMode: localStorage.getItem('pendingInvite') ? 'signup' : 'signin', authBusy: false,
   teams: [], seasons: [], teamId: localStorage.getItem('teamId') || null,
   players: [], matches: [], view: 'matches',
   matchId: null, events: [], pending: false,
@@ -254,9 +264,10 @@ const S = {
   editPlayerId: null, showPlayerForm: false, showMatchForm: false,
   statsScope: 'match', statsSeasonId: null, seasonEvents: null, seasonLoading: false,
   coachNames: {}, freshForms: false,
-  cardPlayerId: null, cardData: null, formPhoto: undefined
+  cardPlayerId: null, cardData: null, formPhoto: undefined,
+  invites: [], lastInvite: null, claiming: false
 };
-const unsub = { profile:null, teams:null, seasons:null, players:null, matches:null, events:null };
+const unsub = { profile:null, teams:null, seasons:null, players:null, matches:null, events:null, invites:null };
 const off = k => { if (unsub[k]) { unsub[k](); unsub[k] = null; } };
 const isAdmin = () => S.profile?.role === 'admin';
 const team = () => S.teams.find(t => t.id === S.teamId);
@@ -275,7 +286,7 @@ const fail = what => err => { console.error(err); toast(`${what} didn’t save: 
 // ---------- Auth & subscriptions ----------
 onAuthStateChanged(auth, user => {
   S.user = user;
-  ['profile','teams','seasons','players','matches','events'].forEach(off);
+  ['profile','teams','seasons','players','matches','events','invites'].forEach(off);
   S.profile = null; S.teams = []; S.players = []; S.matches = []; S.events = [];
   if (!user) { render(); return; }
   unsub.profile = onSnapshot(doc(db, 'users', user.uid), snap => {
@@ -288,6 +299,7 @@ onAuthStateChanged(auth, user => {
     const prevRole = S.profile?.role;
     S.profile = { id: snap.id, ...snap.data() };
     if (prevRole !== S.profile.role) subTeams();
+    if (pendingInvite() && !S.claiming) claimInvite();
     render();
   });
   unsub.seasons = onSnapshot(query(collection(db, 'seasons'), orderBy('startDate', 'desc')), snap => {
@@ -296,6 +308,28 @@ onAuthStateChanged(auth, user => {
   }, () => {});
   render();
 });
+
+async function claimInvite() {
+  const inv = pendingInvite(); if (!inv) return;
+  S.claiming = true;
+  try {
+    const ref = doc(db, 'invites', inv.token);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().used) { toast('That invite link has already been used or was cancelled. Ask your administrator for a new one.'); localStorage.removeItem('pendingInvite'); return; }
+    const d = snap.data();
+    const myEmail = (S.user.email || '').toLowerCase();
+    if (d.email !== myEmail) { toast(`This invite was sent to ${d.email}. Sign out and sign in with that email.`); return; }
+    const b = writeBatch(db);
+    b.update(doc(db, 'teams', d.teamId), { coachIds: arrayUnion(S.user.uid), lastInvite: inv.token });
+    b.update(ref, { used: true, usedBy: S.user.uid });
+    await b.commit();
+    localStorage.removeItem('pendingInvite');
+    localStorage.setItem('teamId', d.teamId); S.teamId = d.teamId;
+    toast(`You’ve joined ${d.teamName || 'the team'}`);
+    subTeams();
+  } catch (e) { fail('Joining the team')(e); }
+  finally { S.claiming = false; render(); }
+}
 
 function subTeams() {
   off('teams');
@@ -320,8 +354,30 @@ function selectTeam(id) {
     S.matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     render();
   }, fail('Matches'));
-  if (isAdmin()) loadCoachNames();
+  if (isAdmin()) { loadCoachNames(); subInvites(); }
   render();
+}
+function subInvites() {
+  off('invites'); S.invites = [];
+  if (!isAdmin() || !S.teamId) return;
+  unsub.invites = onSnapshot(query(collection(db, 'invites'), where('teamId', '==', S.teamId)), snap => {
+    S.invites = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.used);
+    render();
+  }, () => {});
+}
+const inviteLink = i => `${location.origin}${location.pathname}?invite=${i.id}&team=${encodeURIComponent(i.teamName || '')}&email=${encodeURIComponent(i.email)}`;
+const inviteText = i => `You’re invited to coach ${i.teamName || 'our team'} on VB Stats. Open this link and create your account with ${i.email}:\n${inviteLink(i)}`;
+async function shareInvite(i) {
+  const text = inviteText(i);
+  if (navigator.share) { try { await navigator.share({ title: 'VB Stats invite', text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  copyText(inviteLink(i));
+}
+function emailInvite(i) {
+  location.href = `mailto:${encodeURIComponent(i.email)}?subject=${encodeURIComponent('You’re invited to VB Stats: ' + (i.teamName || ''))}&body=${encodeURIComponent(inviteText(i))}`;
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); toast('Invite link copied'); }
+  catch { prompt('Copy this invite link:', t); }
 }
 
 async function loadCoachNames() {
@@ -440,9 +496,10 @@ function viewAuth() {
   const up = S.authMode === 'signup';
   return `<div class="stack" style="padding-top:48px;gap:20px">
     <div class="stack" style="gap:6px"><h1 style="font-size:44px">VB Stats</h1><p class="soft" style="margin:0">Plus/minus scoring for your team.</p></div>
+    ${pendingInvite() ? `<div class="card" style="background:var(--plus-bg);border:1px solid var(--plus-bd)"><b>You’re invited to coach ${esc(pendingInvite().team || 'a team')}.</b><div class="small soft" style="margin-top:4px">${up ? 'Create your account' : 'Sign in'} with ${pendingInvite().email ? `<b>${esc(pendingInvite().email)}</b>` : 'the email the invite was sent to'} and you’ll be added automatically.</div></div>` : ''}
     <form data-form="auth" class="stack">
       ${up ? `<label class="f">Your name<input id="au-name" type="text" autocomplete="name" required></label>` : ''}
-      <label class="f">Email<input id="au-email" type="email" autocomplete="email" required></label>
+      <label class="f">Email<input id="au-email" type="email" autocomplete="email" value="${esc(pendingInvite()?.email || '')}" required></label>
       <label class="f">Password<input id="au-pass" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" minlength="6" required></label>
       <button class="btn btn-primary btn-block" ${S.authBusy ? 'disabled' : ''}>${up ? 'Create account' : 'Sign in'}</button>
     </form>
@@ -711,10 +768,16 @@ function viewAdmin() {
     <form data-form="team" class="card stack"><h2>Create team</h2>
       <label class="f">Team name<input id="t-name" type="text" required></label>
       <button class="btn btn-primary">Create team</button></form>
-    ${t ? `<form data-form="coach" class="card stack"><h2>Coaches on ${esc(t.name)}</h2>
+    ${t ? `<div class="card stack"><h2>Coaches on ${esc(t.name)}</h2>
       ${(t.coachIds || []).map(uid => `<div class="row between"><span class="ell">${esc(S.coachNames[uid] || '…')}${uid === S.user.uid ? ' (you)' : ''}</span>${uid === S.user.uid ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="removeCoach" data-id="${uid}">Remove</button>`}</div>`).join('') || '<span class="muted small">No coaches yet.</span>'}
-      <label class="f">Add coach by email<input id="c-email" type="email" placeholder="They must create an account first" required></label>
-      <button class="btn btn-primary">Add coach</button></form>` : ''}
+      ${S.invites.length ? `<div class="small muted" style="margin-top:4px">Invited, waiting to join</div>${S.invites.map(i => `<div class="row between"><span class="ell small">${esc(i.email)}</span><span class="row" style="gap:6px"><button class="btn btn-ghost btn-sm" data-act="shareInvite" data-id="${i.id}">Resend</button><button class="btn btn-ghost btn-sm" data-act="cancelInvite" data-id="${i.id}" aria-label="Cancel invite for ${esc(i.email)}">Cancel</button></span></div>`).join('')}` : ''}
+      <form data-form="coach" class="stack" style="margin-top:6px">
+        <label class="f">Invite a coach by email<input id="c-email" type="email" placeholder="coach@example.com" required></label>
+        <button class="btn btn-primary">Create invite</button>
+      </form>
+      ${S.lastInvite ? `<div class="card stack" style="background:var(--s1)"><span class="small soft">Invite ready for <b>${esc(S.lastInvite.email)}</b>. Send it however you like:</span>
+        <div class="grid3"><button class="btn btn-primary btn-sm" data-act="shareInvite" data-id="${S.lastInvite.id}">Text / share</button><button class="btn btn-ghost btn-sm" data-act="emailInvite" data-id="${S.lastInvite.id}">Email</button><button class="btn btn-ghost btn-sm" data-act="copyInvite" data-id="${S.lastInvite.id}">Copy link</button></div></div>` : ''}
+    </div>` : ''}
     <form data-form="season" class="card stack"><h2>Seasons</h2>
       ${S.seasons.map(s => `<div class="row between"><span>${esc(s.name)}</span>${s.isCurrent ? '<span class="chip on">Current</span>' : `<button type="button" class="btn btn-ghost btn-sm" data-act="makeCurrent" data-id="${s.id}">Make current</button>`}</div>`).join('') || '<span class="muted small">No seasons yet.</span>'}
       <div class="grid2"><label class="f">New season<input id="s-name" type="text" placeholder="Fall 2026" required></label><label class="f">Start date<input id="s-date" type="date" value="${today}"></label></div>
@@ -771,6 +834,10 @@ document.addEventListener('click', async e => {
       sendPasswordResetEmail(auth, em).then(() => toast('Password reset email sent')).catch(err => toast(err.message)); break; }
     case 'signout': closeMatch(); signOut(auth); break;
     case 'reload': location.reload(); break;
+    case 'shareInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) shareInvite(i); break; }
+    case 'emailInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) emailInvite(i); break; }
+    case 'copyInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) copyText(inviteLink(i)); break; }
+    case 'cancelInvite': if (confirm('Cancel this invite? The link will stop working.')) { deleteDoc(doc(db, 'invites', id)).catch(fail('Invite')); if (S.lastInvite?.id === id) S.lastInvite = null; } break;
     case 'resetDevice': resetDevice(); break;
     case 'go': S.view = el.dataset.v; if (S.view === 'admin') loadCoachNames(); window.scrollTo(0, 0); render(); break;
     case 'newMatch': S.showMatchForm = true; S.freshForms = true; render(); document.getElementById('m-opp')?.focus(); break;
@@ -861,11 +928,20 @@ document.addEventListener('submit', async e => {
     }
     if (f === 'coach') {
       const em = v('c-email').toLowerCase();
-      const r = await getDocs(query(collection(db, 'users'), where('email', '==', em)));
-      if (r.empty) { toast('No account with that email. Ask the coach to create one first.'); return; }
-      await updateDoc(doc(db, 'teams', S.teamId), { coachIds: arrayUnion(r.docs[0].id) });
-      S.coachNames[r.docs[0].id] = r.docs[0].data().name || em;
-      toast('Coach added'); S.freshForms = true; render(); return;
+      const t = team();
+      const existing = await getDocs(query(collection(db, 'users'), where('email', '==', em)));
+      if (!existing.empty) {
+        const uid = existing.docs[0].id;
+        if ((t.coachIds || []).includes(uid)) { toast('That coach is already on this team'); return; }
+        await updateDoc(doc(db, 'teams', S.teamId), { coachIds: arrayUnion(uid) });
+        S.coachNames[uid] = existing.docs[0].data().name || em;
+        toast(`${em} already had an account and was added to ${t.name}`); S.freshForms = true; render(); return;
+      }
+      const token = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+      const inv = { email: em, teamId: S.teamId, teamName: t.name, invitedBy: S.user.uid, createdAt: Timestamp.now(), used: false };
+      await setDoc(doc(db, 'invites', token), inv);
+      S.lastInvite = { id: token, ...inv };
+      S.freshForms = true; render(); return;
     }
     if (f === 'season') {
       const first = !S.seasons.length;
