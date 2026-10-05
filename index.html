@@ -122,6 +122,9 @@ textarea{font:inherit;font-size:16px;color:var(--text);border-radius:10px;border
 .bstrip span{font-size:12px;color:var(--muted)}
 .tbl.plain td:nth-child(1){font-family:var(--body);font-weight:500;font-size:14px;width:auto;white-space:nowrap}
 .tbl.plain th:nth-child(2),.tbl.plain td:nth-child(2){text-align:right}
+.chart{width:100%;height:auto;display:block}
+.trend td:nth-child(4){font-weight:700}
+.up{color:var(--plus)} .down{color:var(--minus)} .flat{color:var(--muted)}
 .empty{padding:28px 16px;text-align:center;color:var(--soft);background:var(--s2);border-radius:14px}
 @media (prefers-reduced-motion:reduce){.sb:active{transform:none}}
 </style>
@@ -263,11 +266,15 @@ const S = {
   set: 1, selected: null, lineup: [], subMode: false, undo: [],
   editPlayerId: null, showPlayerForm: false, showMatchForm: false,
   statsScope: 'match', statsSeasonId: null, seasonEvents: null, seasonLoading: false,
+  dayKey: null, dayEvents: null, dayLoading: false,
+  tournaments: [], matchesTab: 'matches', editMatchId: null, matchFormTour: undefined,
+  showTourForm: false, editTourId: null, tourId: null, tourEvents: null, tourLoading: false,
   coachNames: {}, freshForms: false,
   cardPlayerId: null, cardData: null, formPhoto: undefined,
-  invites: [], lastInvite: null, claiming: false
+  invites: [], lastInvite: null, claiming: false,
+  trendMetric: 'pm'
 };
-const unsub = { profile:null, teams:null, seasons:null, players:null, matches:null, events:null, invites:null };
+const unsub = { profile:null, teams:null, seasons:null, players:null, matches:null, events:null, invites:null, tournaments:null };
 const off = k => { if (unsub[k]) { unsub[k](); unsub[k] = null; } };
 const isAdmin = () => S.profile?.role === 'admin';
 const team = () => S.teams.find(t => t.id === S.teamId);
@@ -286,7 +293,7 @@ const fail = what => err => { console.error(err); toast(`${what} didn’t save: 
 // ---------- Auth & subscriptions ----------
 onAuthStateChanged(auth, user => {
   S.user = user;
-  ['profile','teams','seasons','players','matches','events','invites'].forEach(off);
+  ['profile','teams','seasons','players','matches','events','invites','tournaments'].forEach(off);
   S.profile = null; S.teams = []; S.players = []; S.matches = []; S.events = [];
   if (!user) { render(); return; }
   unsub.profile = onSnapshot(doc(db, 'users', user.uid), snap => {
@@ -343,8 +350,8 @@ function subTeams() {
 
 function selectTeam(id) {
   S.teamId = id; if (id) localStorage.setItem('teamId', id);
-  off('players'); off('matches'); closeMatch();
-  S.players = []; S.matches = []; S.coachNames = {};
+  off('players'); off('matches'); off('tournaments'); closeMatch();
+  S.players = []; S.matches = []; S.tournaments = []; S.tourId = null; S.tourEvents = null; S.coachNames = {};
   if (!id) { render(); return; }
   unsub.players = onSnapshot(collection(db, 'teams', id, 'players'), snap => {
     S.players = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.number - b.number);
@@ -354,6 +361,10 @@ function selectTeam(id) {
     S.matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     render();
   }, fail('Matches'));
+  unsub.tournaments = onSnapshot(query(collection(db, 'teams', id, 'tournaments'), orderBy('startDate', 'desc')), snap => {
+    S.tournaments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, fail('Tournaments'));
   if (isAdmin()) { loadCoachNames(); subInvites(); }
   render();
 }
@@ -438,6 +449,61 @@ async function loadSeason(seasonId) {
     S.seasonEvents = all;
   } catch (e) { fail('Season stats')(e); S.seasonEvents = []; }
   S.seasonLoading = false; render();
+}
+
+// ---------- Daily stats (all matches on one date, e.g. a tournament day) ----------
+const dayKeyOf = t => { const d = toDate(t); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''; };
+const dayLabel = k => new Date(k + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+function matchDays() {
+  const by = {};
+  S.matches.forEach(m => { const k = dayKeyOf(m.date); if (k) (by[k] ||= []).push(m); });
+  return Object.entries(by).sort((a, b) => b[0].localeCompare(a[0]));
+}
+async function loadDay(key) {
+  S.dayKey = key; S.dayEvents = null; S.dayLoading = true; render();
+  try {
+    const ms = S.matches.filter(m => dayKeyOf(m.date) === key);
+    const lists = await Promise.all(ms.map(async m => {
+      const snap = await getDocs(collection(db, 'teams', S.teamId, 'matches', m.id, 'events'));
+      return snap.docs.map(d => ({ ...d.data(), matchId: m.id }));
+    }));
+    if (S.dayKey === key) S.dayEvents = lists.flat();
+  } catch (e) { fail('Daily stats')(e); S.dayEvents = []; }
+  S.dayLoading = false; render();
+}
+
+// ---------- Tournaments ----------
+const tourById = id => S.tournaments.find(t => t.id === id);
+const tourMatches = id => S.matches.filter(m => m.tournamentId === id);
+const tourDates = t => { const a = fmtDate(t.startDate), b = t.endDate ? fmtDate(t.endDate) : ''; return b && b !== a ? `${a} to ${b}` : a; };
+async function loadTournament(id) {
+  S.tourId = id; S.tourEvents = null; S.tourLoading = true; render();
+  try {
+    const lists = await Promise.all(tourMatches(id).map(async m => {
+      const snap = await getDocs(collection(db, 'teams', S.teamId, 'matches', m.id, 'events'));
+      return snap.docs.map(d => ({ ...d.data(), matchId: m.id }));
+    }));
+    if (S.tourId === id) S.tourEvents = lists.flat();
+  } catch (e) { fail('Tournament stats')(e); S.tourEvents = []; }
+  S.tourLoading = false; render();
+}
+function tournamentFields(prefix, t, defDate) {
+  const seasons = S.seasons, cur = seasons.find(s => s.isCurrent) || seasons[0];
+  const dv = x => { const d = toDate(x); return d ? dayKeyOf(d) : ''; };
+  return `<label class="f">Tournament name<input id="${prefix}-name" type="text" value="${esc(t?.name || '')}" placeholder="e.g. Desert Classic" required></label>
+    <label class="f">Location<input id="${prefix}-loc" type="text" value="${esc(t?.location || '')}" placeholder="Optional"></label>
+    <div class="grid2">
+      <label class="f">Start date<input id="${prefix}-start" type="date" value="${dv(t?.startDate) || defDate}" required></label>
+      <label class="f">End date<input id="${prefix}-end" type="date" value="${dv(t?.endDate)}"></label>
+    </div>
+    ${prefix === 't2' ? `<label class="f">Season<select id="t2-season">${seasons.length ? seasons.map(s => `<option value="${s.id}" ${s.id === (t?.seasonId || cur?.id) ? 'selected' : ''}>${esc(s.name)}</option>`).join('') : '<option value="">No season</option>'}</select></label>` : ''}`;
+}
+function readTournament(prefix, seasonId) {
+  const v = id => document.getElementById(id)?.value.trim();
+  const st = v(prefix + '-start'), en = v(prefix + '-end');
+  return { name: v(prefix + '-name'), location: v(prefix + '-loc') || '',
+    startDate: Timestamp.fromDate(new Date(st + 'T12:00:00')), endDate: en ? Timestamp.fromDate(new Date(en + 'T12:00:00')) : null,
+    seasonId: seasonId ?? (v(prefix + '-season') || '') };
 }
 
 // ---------- CSV export ----------
@@ -527,29 +593,63 @@ function viewNoTeam() {
 }
 
 function viewMatches() {
+  const tabs = `<div class="seg" style="margin-bottom:12px"><button aria-pressed="${S.matchesTab === 'matches'}" data-act="matchesTab" data-v="matches">Matches</button><button aria-pressed="${S.matchesTab === 'tournaments'}" data-act="matchesTab" data-v="tournaments">Tournaments</button></div>`;
+  if (S.matchesTab === 'tournaments') return `${header('Matches')}${tabs}${viewTournaments()}`;
   const seasons = S.seasons;
   const cur = seasons.find(s => s.isCurrent) || seasons[0];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dayKeyOf(new Date());
+  const editing = S.editMatchId ? S.matches.find(m => m.id === S.editMatchId) : null;
+  const lastTour = localStorage.getItem('lastTour:' + S.teamId);
+  const defTour = editing ? (editing.tournamentId || '') : (tourById(lastTour) && (Date.now() - (toDate(tourById(lastTour).endDate || tourById(lastTour).startDate)?.getTime() || 0)) < 3 * 864e5 ? lastTour : '');
+  const tourSel = S.matchFormTour === undefined ? defTour : S.matchFormTour;
   const form = S.showMatchForm ? `<form data-form="match" class="card stack">
-      <h2>New match</h2>
-      <label class="f">Opponent<input id="m-opp" type="text" required></label>
+      <h2>${editing ? 'Edit match' : 'New match'}</h2>
+      <label class="f">Opponent<input id="m-opp" type="text" value="${esc(editing?.opponent || '')}" required></label>
+      <label class="f">Tournament<select id="m-tour" data-act="tourSelect">
+        <option value="" ${tourSel === '' ? 'selected' : ''}>None (regular match)</option>
+        ${S.tournaments.map(t => `<option value="${t.id}" ${tourSel === t.id ? 'selected' : ''}>${esc(t.name)} (${fmtDate(t.startDate)})</option>`).join('')}
+        <option value="__new" ${tourSel === '__new' ? 'selected' : ''}>+ New tournament…</option>
+      </select></label>
+      ${tourSel === '__new' ? `<div class="card stack" style="background:var(--s1)">${tournamentFields('t1', null, today)}</div>` : ''}
       <div class="grid2">
-        <label class="f">Date<input id="m-date" type="date" value="${today}" required></label>
-        <label class="f">Season<select id="m-season">${seasons.length ? seasons.map(s => `<option value="${s.id}" ${s.id === cur?.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('') : '<option value="">No season</option>'}</select></label>
+        <label class="f">Date<input id="m-date" type="date" value="${editing ? dayKeyOf(editing.date) : today}" required></label>
+        <label class="f">Season<select id="m-season">${seasons.length ? seasons.map(s => `<option value="${s.id}" ${s.id === (editing?.seasonId || cur?.id) ? 'selected' : ''}>${esc(s.name)}</option>`).join('') : '<option value="">No season</option>'}</select></label>
       </div>
-      <label class="f">Location<input id="m-loc" type="text" placeholder="Optional"></label>
-      <div class="grid2"><button type="button" class="btn btn-ghost" data-act="cancelMatch">Cancel</button><button class="btn btn-primary">Create match</button></div>
+      <label class="f">Location<input id="m-loc" type="text" value="${esc(editing?.location || '')}" placeholder="${tourSel && tourSel !== '__new' ? 'Defaults to the tournament location' : 'Optional'}"></label>
+      <div class="grid2"><button type="button" class="btn btn-ghost" data-act="cancelMatch">Cancel</button><button class="btn btn-primary">${editing ? 'Save match' : 'Create match'}</button></div>
     </form>` : `<button class="btn btn-primary btn-block" data-act="newMatch">New match</button>`;
   const list = S.matches.length ? S.matches.map(m => {
     const st = m.status === 'final' ? 'Final' : m.status === 'live' ? 'In progress' : 'Scheduled';
+    const t = tourById(m.tournamentId);
     return `<div class="li" style="padding:6px 6px 6px 14px">
       <button class="grow" data-act="open" data-id="${m.id}" style="text-align:left;min-height:44px">
         <div class="ell" style="font-weight:600">vs ${esc(m.opponent)}</div>
-        <div class="small muted">${fmtDate(m.date)}${m.location ? ', ' + esc(m.location) : ''}</div>
+        <div class="small muted ell">${fmtDate(m.date)}${t ? ', ' + esc(t.name) : ''}${m.location ? ', ' + esc(m.location) : ''}</div>
       </button>
       <span class="chip ${m.status === 'live' ? 'on' : ''}">${st}</span>
+      <button class="btn btn-ghost btn-sm" data-act="editMatch" data-id="${m.id}" aria-label="Edit match vs ${esc(m.opponent)}">Edit</button>
     </div>`; }).join('') : `<div class="empty">No matches yet. Create one to start entering stats.</div>`;
-  return `${header('Matches')}<div class="stack">${form}${list}</div>`;
+  return `${header('Matches')}${tabs}<div class="stack">${form}${list}</div>`;
+}
+
+function viewTournaments() {
+  const editing = S.editTourId ? tourById(S.editTourId) : null;
+  const form = S.showTourForm ? `<form data-form="tour" class="card stack"><h2>${editing ? 'Edit tournament' : 'New tournament'}</h2>
+      ${tournamentFields('t2', editing, dayKeyOf(new Date()))}
+      <div class="grid2"><button type="button" class="btn btn-ghost" data-act="cancelTour">Cancel</button><button class="btn btn-primary">${editing ? 'Save' : 'Create tournament'}</button></div>
+      ${editing && isAdmin() ? `<button type="button" class="btn btn-ghost" style="color:var(--minus-fg)" data-act="deleteTour" data-id="${editing.id}">Delete tournament</button>` : ''}
+    </form>` : `<button class="btn btn-primary btn-block" data-act="newTour">New tournament</button>`;
+  const list = S.tournaments.length ? S.tournaments.map(t => {
+    const n = tourMatches(t.id).length;
+    return `<div class="li" style="padding:6px 6px 6px 14px">
+      <button class="grow" data-act="tourStats" data-id="${t.id}" style="text-align:left;min-height:44px" aria-label="Show stats for ${esc(t.name)}">
+        <div class="ell" style="font-weight:600">${esc(t.name)}</div>
+        <div class="small muted ell">${tourDates(t)}${t.location ? ', ' + esc(t.location) : ''}</div>
+      </button>
+      <span class="chip">${n} match${n === 1 ? '' : 'es'}</span>
+      <button class="btn btn-ghost btn-sm" data-act="editTour" data-id="${t.id}" aria-label="Edit ${esc(t.name)}">Edit</button>
+    </div>`; }).join('') : `<div class="empty">No tournaments yet. Create one here, or pick “+ New tournament” when you add a match.</div>`;
+  return `<div class="stack">${form}${list}</div>`;
 }
 
 function viewLive() {
@@ -658,6 +758,101 @@ function viewRoster() {
     <div class="stack">${form}<div class="stack" style="gap:6px">${list}</div></div>`;
 }
 
+// ---------- Trends (computed on the phone; no AI service needed) ----------
+const TREND = {
+  pm:   { label: '+/−',      get: g => g.pm,          fmt: fmtPM },
+  pts:  { label: 'Points',   get: g => g.pts,         fmt: num },
+  hit:  { label: 'Hit %',    get: g => g.hitPct,      fmt: fmtHit },
+  pass: { label: 'Pass',     get: g => g.passRating,  fmt: fmtRate },
+  ace:  { label: 'Aces',     get: g => g.SA,          fmt: num },
+  err:  { label: 'Errors',   get: g => totalErr(g),   fmt: num, lowerBetter: true }
+};
+const totalErr = g => Object.values(g.errs).reduce((a, b) => a + b, 0);
+const chronological = d => [...d].sort((a, b) => (toDate(a.m.date)?.getTime() || 0) - (toDate(b.m.date)?.getTime() || 0));
+
+function trendChart(games, key) {
+  const def = TREND[key];
+  const pts = games.map((r, i) => ({ i, v: def.get(statLine(r.evs)), d: toDate(r.m.date), opp: r.m.opponent })).filter(p => p.v != null);
+  if (pts.length < 2) return `<div class="small muted">Not enough ${def.label.toLowerCase()} data yet to chart.</div>`;
+  const W = 320, H = 150, L = 34, R = 8, T = 10, B = 24;
+  let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  if (key === 'pm' || key === 'hit') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+  const n = games.length;
+  const x = i => L + (n === 1 ? 0 : i * (W - L - R) / (n - 1));
+  const y = v => T + (hi - v) * (H - T - B) / (hi - lo);
+  const line = pts.map(p => `${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const roll = pts.map((p, k) => { const w = pts.slice(Math.max(0, k - 2), k + 1); return { i: p.i, v: w.reduce((a, b) => a + b.v, 0) / w.length }; });
+  const rollLine = roll.map(p => `${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const zero = lo < 0 && hi > 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="#2E3B52" stroke-dasharray="3 3"></line>` : '';
+  const dfmt = d => d ? d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }) : '';
+  const yl = v => def.fmt(key === 'hit' ? v : Math.round(v * 10) / 10);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${def.label} by match, ${pts.length} matches">
+    <line x1="${L}" x2="${W - R}" y1="${T}" y2="${T}" stroke="#1E2738"></line><line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="#1E2738"></line>
+    ${zero}
+    <text x="${L - 6}" y="${T + 4}" fill="#9AA6B8" font-size="10" text-anchor="end">${yl(hi)}</text>
+    <text x="${L - 6}" y="${H - B + 4}" fill="#9AA6B8" font-size="10" text-anchor="end">${yl(lo)}</text>
+    <polyline points="${rollLine}" fill="none" stroke="#FF9447" stroke-width="2" stroke-dasharray="5 4" opacity=".85"></polyline>
+    <polyline points="${line}" fill="none" stroke="#4DA8FF" stroke-width="2.5" stroke-linejoin="round"></polyline>
+    ${pts.map(p => `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="3.5" fill="#4DA8FF"><title>${esc(dfmt(p.d))} vs ${esc(p.opp)}: ${def.fmt(p.v)}</title></circle>`).join('')}
+    <text x="${L}" y="${H - 6}" fill="#9AA6B8" font-size="10">${dfmt(toDate(games[0].m.date))}</text>
+    <text x="${W - R}" y="${H - 6}" fill="#9AA6B8" font-size="10" text-anchor="end">${dfmt(toDate(games[n - 1].m.date))}</text>
+  </svg>
+  <div class="row small muted" style="gap:14px;margin-top:4px"><span class="row" style="gap:6px"><span style="width:14px;height:3px;background:#4DA8FF;display:inline-block"></span>Each match</span><span class="row" style="gap:6px"><span style="width:14px;height:0;border-top:2px dashed #FF9447;display:inline-block"></span>3-match average</span></div>`;
+}
+
+// Compare the last 5 matches with everything before them.
+function trendCompare(games) {
+  const recentN = Math.min(5, Math.floor(games.length / 2));
+  const recent = games.slice(-recentN), before = games.slice(0, games.length - recentN);
+  const agg = rs => ({ s: statLine(rs.flatMap(r => r.evs)), gp: rs.length });
+  const a = agg(recent), b = agg(before);
+  const perMatch = (o, f) => f(o.s) / o.gp;
+  const rows = [
+    { k: 'pm',   label: '+/− per match',    r: perMatch(a, s => s.pm),  p: perMatch(b, s => s.pm),  fmt: v => fmtPM(Math.round(v * 10) / 10), th: 1 },
+    { k: 'pts',  label: 'Points per match', r: perMatch(a, s => s.pts), p: perMatch(b, s => s.pts), fmt: v => v.toFixed(1), th: 1 },
+    { k: 'hit',  label: 'Hit %',            r: a.s.hitPct,              p: b.s.hitPct,              fmt: fmtHit, th: 0.05 },
+    { k: 'pass', label: 'Pass rating',      r: a.s.passRating,          p: b.s.passRating,          fmt: fmtRate, th: 0.2 },
+    { k: 'ace',  label: 'Aces per match',   r: perMatch(a, s => s.SA),  p: perMatch(b, s => s.SA),  fmt: v => v.toFixed(1), th: 0.5 },
+    { k: 'err',  label: 'Errors per match', r: perMatch(a, totalErr),   p: perMatch(b, totalErr),   fmt: v => v.toFixed(1), th: 1, lowerBetter: true }
+  ].filter(r => r.r != null && r.p != null);
+  rows.forEach(r => { const dlt = r.r - r.p; r.dir = Math.abs(dlt) < r.th / 2 ? 'flat' : ((dlt > 0) !== !!r.lowerBetter ? 'up' : 'down'); r.big = Math.abs(dlt) >= r.th; });
+  const notes = rows.filter(r => r.big).slice(0, 3).map(r => {
+    const better = r.dir === 'up';
+    const what = { pm: 'Plus/minus', pts: 'Scoring', hit: 'Hitting', pass: 'Passing', ace: 'Serving aces', err: 'Errors' }[r.k];
+    const verb = r.lowerBetter ? (better ? 'are down' : 'are up') : (better ? 'is up' : 'is down');
+    return `<li><span class="${r.dir}">${better ? '▲' : '▼'}</span> ${what} ${verb}: ${r.fmt(r.r)} over the last ${recentN} matches vs ${r.fmt(r.p)} before.</li>`;
+  });
+  return { recentN, html: `<div class="tblwrap"><table class="tbl plain trend"><thead><tr><th>Stat</th><th>Last ${recentN}</th><th>Before</th><th></th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${r.label}</td><td>${r.fmt(r.r)}</td><td>${r.fmt(r.p)}</td><td class="${r.dir}" aria-label="${r.dir === 'up' ? 'improving' : r.dir === 'down' ? 'declining' : 'steady'}">${r.dir === 'up' ? '▲' : r.dir === 'down' ? '▼' : '–'}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${notes.length ? `<ul style="margin:10px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px" class="small soft">${notes.join('')}</ul>` : `<div class="small muted" style="margin-top:8px">No big changes recently. Performance is steady.</div>`}` };
+}
+
+// Builds a stat summary to paste into Claude, ChatGPT, or Gemini.
+// Uses jersey number and position only (no name or photo) to protect players' privacy.
+function aiPrompt(p, d) {
+  const games = chronological(d);
+  const all = statLine(games.flatMap(r => r.evs));
+  const line = (label, s) => `${label}: +/- ${num(s.pm)}, pts ${num(s.pts)}, K ${s.K}, attack err ${s.AE}, total attacks ${s.TA}, hit% ${fmtHit(s.hitPct)}, passes ${s.passN} (rating ${fmtRate(s.passRating)} on 0-3 scale; 3s ${s.n('passExcellent')}, 2s ${s.n('passGood')}, 1s ${s.n('passPlayable')}, 0s ${s.n('receptionError')}), aces ${s.SA}, serve err ${s.SE}, assists ${s.AST}, set err ${s.SETE}, solo blocks ${s.BS}, block assists ${s.BA}, block err ${s.BE}`;
+  return `You are an experienced volleyball coach. Analyze this player's stats and give me: (1) a 2-sentence summary, (2) top 3 strengths, (3) top 3 things to work on with a specific practice drill for each, and (4) what the trend over recent matches says. Be specific and use the numbers.
+
+Scoring: kills/aces/solo blocks/assists +1, block assists +0.5, service/attack/set/block errors -1. Hit% = (kills - attack errors) / total attacks. Pass rating is the average on a 0-3 scale.
+
+Player: #${p.number}, ${POS[p.position] || p.position}${p.secondaryPosition ? ' / ' + POS[p.secondaryPosition] : ''}${p.gradYear ? ', class of ' + p.gradYear : ''}${p.height ? ', ' + p.height : ''}${p.hand ? ', ' + p.hand.toLowerCase() + '-handed' : ''}
+${line(`Totals over ${games.length} matches`, all)}
+
+Match by match (oldest first):
+${games.map(r => line(`${fmtDate(r.m.date)} vs opponent`, statLine(r.evs))).join('\n')}`;
+}
+async function shareAI(p, d) {
+  const text = aiPrompt(p, d);
+  try { await navigator.clipboard.writeText(text); toast('Copied. Paste it into Claude, ChatGPT, or Gemini.'); return; } catch {}
+  if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  prompt('Copy this and paste it into your AI app:', text);
+}
+
 function viewCard() {
   const p = playerById(S.cardPlayerId);
   if (!p) return `${header('Player')}<div class="empty">That player isn’t on this team.</div>`;
@@ -678,6 +873,10 @@ function viewCard() {
       return { name: sn?.name || 'No season', start: toDate(sn?.startDate)?.getTime() || 0, gp: rs.length, s: statLine(rs.flatMap(r => r.evs)) };
     }).sort((a, b) => b.start - a.start);
     const games = [...d].sort((a, b) => (toDate(b.m.date)?.getTime() || 0) - (toDate(a.m.date)?.getTime() || 0));
+    const byTour = {};
+    d.filter(r => r.m.tournamentId && tourById(r.m.tournamentId)).forEach(r => (byTour[r.m.tournamentId] ||= []).push(r));
+    const tourRows = Object.entries(byTour).map(([tid, rs]) => ({ t: tourById(tid), gp: rs.length, s: statLine(rs.flatMap(r => r.evs)) }))
+      .sort((a, b) => (toDate(b.t.startDate)?.getTime() || 0) - (toDate(a.t.startDate)?.getTime() || 0));
     const shortDate = t => { const x = toDate(t); return x ? x.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' }) : ''; };
     body = `
       <div class="card"><h2 style="margin-bottom:8px">By season</h2><div class="tblwrap"><table class="tbl plain">
@@ -685,9 +884,13 @@ function viewCard() {
         ${seasonRows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.gp}</td><td style="font-weight:700;color:${pmColor(r.s.pm)}">${fmtPM(r.s.pm)}</td><td>${num(r.s.pts)}</td><td>${r.s.K}</td><td>${fmtHit(r.s.hitPct)}</td><td>${fmtRate(r.s.passRating)}</td><td>${r.s.SA}</td><td>${r.s.AST}</td><td>${num(r.s.blocks)}</td></tr>`).join('')}
         ${seasonRows.length > 1 ? `<tr><td style="font-weight:700">Career</td><td>${d.length}</td><td style="font-weight:700;color:${pmColor(all.pm)}">${fmtPM(all.pm)}</td><td>${num(all.pts)}</td><td>${all.K}</td><td>${fmtHit(all.hitPct)}</td><td>${fmtRate(all.passRating)}</td><td>${all.SA}</td><td>${all.AST}</td><td>${num(all.blocks)}</td></tr>` : ''}
       </tbody></table></div></div>
+      ${tourRows.length ? `<div class="card"><h2 style="margin-bottom:8px">By tournament</h2><div class="tblwrap"><table class="tbl plain">
+        <thead><tr><th>Tournament</th><th>M</th><th>+/−</th><th>Pts</th><th>K</th><th>Hit</th><th>Pass</th><th>Ace</th><th>Ast</th><th>Blk</th></tr></thead><tbody>
+        ${tourRows.map(r => `<tr><td><div class="ell" style="max-width:130px">${esc(r.t.name)}</div><div class="small muted">${fmtDate(r.t.startDate)}</div></td><td>${r.gp}</td><td style="font-weight:700;color:${pmColor(r.s.pm)}">${fmtPM(r.s.pm)}</td><td>${num(r.s.pts)}</td><td>${r.s.K}</td><td>${fmtHit(r.s.hitPct)}</td><td>${fmtRate(r.s.passRating)}</td><td>${r.s.SA}</td><td>${r.s.AST}</td><td>${num(r.s.blocks)}</td></tr>`).join('')}
+      </tbody></table></div></div>` : ''}
       <div class="card"><h2 style="margin-bottom:8px">Game log</h2><div class="tblwrap"><table class="tbl plain">
         <thead><tr><th>Match</th><th>+/−</th><th>Pts</th><th>K</th><th>E</th><th>Hit</th><th>Pass</th><th>Ace</th><th>Blk</th></tr></thead><tbody>
-        ${games.map(r => { const g = statLine(r.evs); return `<tr><td><button data-act="openFromCard" data-id="${r.m.id}" style="text-align:left;min-height:44px;color:var(--text)"><div class="ell" style="max-width:120px">vs ${esc(r.m.opponent)}</div><div class="small muted">${shortDate(r.m.date)}</div></button></td><td style="font-weight:700;color:${pmColor(g.pm)}">${fmtPM(g.pm)}</td><td>${num(g.pts)}</td><td>${g.K}</td><td>${g.AE}</td><td>${fmtHit(g.hitPct)}</td><td>${fmtRate(g.passRating)}</td><td>${g.SA}</td><td>${num(g.blocks)}</td></tr>`; }).join('')}
+        ${games.map(r => { const g = statLine(r.evs); return `<tr><td><button data-act="openFromCard" data-id="${r.m.id}" style="text-align:left;min-height:44px;color:var(--text)"><div class="ell" style="max-width:120px">vs ${esc(r.m.opponent)}</div><div class="small muted ell" style="max-width:120px">${shortDate(r.m.date)}${tourById(r.m.tournamentId) ? ', ' + esc(tourById(r.m.tournamentId).name) : ''}</div></button></td><td style="font-weight:700;color:${pmColor(g.pm)}">${fmtPM(g.pm)}</td><td>${num(g.pts)}</td><td>${g.K}</td><td>${g.AE}</td><td>${fmtHit(g.hitPct)}</td><td>${fmtRate(g.passRating)}</td><td>${g.SA}</td><td>${num(g.blocks)}</td></tr>`; }).join('')}
       </tbody></table></div></div>`;
     S._cardTotals = all;
   }
@@ -708,16 +911,28 @@ function viewCard() {
           <div class="bstrip">${strip.map(([l, v, c]) => `<div><b style="${c ? 'color:' + c : ''}">${v}</b><span>${l}</span></div>`).join('')}</div>
         </div>
       </div></div>
+      ${d && d.length >= 2 ? (() => {
+        const games = chronological(d);
+        const seg = Object.entries(TREND).map(([k, t]) => `<button aria-pressed="${S.trendMetric === k}" data-act="trendMetric" data-v="${k}" style="font-size:13px">${t.label}</button>`).join('');
+        const cmp = games.length >= 4 ? trendCompare(games) : null;
+        return `<div class="card stack" style="gap:10px"><div class="row between"><h2>Trends</h2><span class="small muted">${games.length} matches</span></div>
+          <div class="seg" style="overflow-x:auto">${seg}</div>
+          ${trendChart(games, S.trendMetric)}
+          ${cmp ? `<h2 style="margin-top:6px">Recent form</h2>${cmp.html}` : `<div class="small muted">Recent form comparisons appear after 4 matches.</div>`}
+          <button class="btn btn-ghost" data-act="aiCopy">Copy stats for AI analysis</button>
+          <span class="small muted" style="margin-top:-4px">Copies a summary (number and position only, no name or photo) to paste into Claude, ChatGPT, or Gemini.</span>
+        </div>`; })() : ''}
       ${body}
       ${p.notes ? `<div class="card stack" style="gap:6px"><h2>Coach notes</h2><div class="soft" style="white-space:pre-wrap">${esc(p.notes)}</div></div>` : ''}
     </div>`;
 }
 
 function viewStats() {
-  const seasonMode = S.statsScope === 'season';
+  const scope = S.statsScope;
   let evs, title, body = '';
-  const seg = `<div class="seg" style="margin-bottom:12px"><button aria-pressed="${!seasonMode}" data-act="scope" data-v="match">This match</button><button aria-pressed="${seasonMode}" data-act="scope" data-v="season">Season</button></div>`;
-  if (seasonMode) {
+  const seg = `<div class="seg" style="margin-bottom:12px">${[['match', 'Match'], ['day', 'Day'], ['tournament', 'Tourney'], ['season', 'Season']].map(([k, l]) =>
+    `<button aria-pressed="${scope === k}" data-act="scope" data-v="${k}">${l}</button>`).join('')}</div>`;
+  if (scope === 'season') {
     const seasons = S.seasons;
     if (!seasons.length) return `${header('Stats')}${seg}<div class="empty">No seasons yet. An administrator can create one in Admin.</div>`;
     const sid = S.statsSeasonId || (seasons.find(s => s.isCurrent) || seasons[0]).id;
@@ -726,12 +941,41 @@ function viewStats() {
     if (S.seasonLoading || !S.seasonEvents) return `${header('Stats')}${seg}${picker}<div class="empty">Loading season stats…</div>`;
     evs = S.seasonEvents; title = `${team()?.name || 'Team'} ${seasons.find(s => s.id === sid)?.name || ''} season`;
     body = picker;
+  } else if (scope === 'tournament') {
+    const ts = S.tournaments;
+    if (!ts.length) return `${header('Stats')}${seg}<div class="empty stack"><p style="margin:0">No tournaments yet.</p><button class="btn btn-primary" data-act="goTournaments">Add a tournament</button></div>`;
+    const id = (S.tourId && tourById(S.tourId)) ? S.tourId : ts[0].id;
+    if (S.tourId !== id && !S.tourLoading) { queueMicrotask(() => loadTournament(id)); }
+    const t = tourById(id);
+    const picker = `<label class="f" style="margin-bottom:12px">Tournament<select data-act="pickTour">${ts.map(x => `<option value="${x.id}" ${x.id === id ? 'selected' : ''}>${esc(x.name)} (${fmtDate(x.startDate)})</option>`).join('')}</select></label>`;
+    if (S.tourLoading || !S.tourEvents) return `${header('Stats')}${seg}${picker}<div class="empty">Loading tournament stats…</div>`;
+    evs = S.tourEvents; title = `${team()?.name || 'Team'} ${t.name}`;
+    const tms = [...tourMatches(id)].sort((a, b) => (toDate(a.date)?.getTime() || 0) - (toDate(b.date)?.getTime() || 0));
+    body = picker + `<div class="small muted" style="margin:-4px 0 12px">${tourDates(t)}${t.location ? ', ' + esc(t.location) : ''}</div>
+      <div class="card stack" style="gap:8px;margin-bottom:12px"><h2>Matches in this tournament</h2>
+      ${tms.length ? tms.map(m => { const ms = statLine(evs.filter(e => e.matchId === m.id));
+        return `<button class="row between" data-act="dayToMatch" data-id="${m.id}" style="min-height:44px;width:100%;text-align:left" aria-label="Show stats for vs ${esc(m.opponent)}"><span class="ell">vs ${esc(m.opponent)}<span class="small muted">, ${fmtDate(m.date)}</span></span><span class="row" style="gap:12px"><span class="small muted">Hit ${fmtHit(ms.hitPct)}</span><b style="color:${pmColor(ms.pm)}">${fmtPM(ms.pm)}</b></span></button>`; }).join('') : '<span class="small muted">No matches assigned yet. Edit a match and choose this tournament.</span>'}
+    </div>`;
+  } else if (scope === 'day') {
+    const days = matchDays();
+    if (!days.length) return `${header('Stats')}${seg}<div class="empty">No matches yet.</div>`;
+    const today = dayKeyOf(new Date());
+    const key = (S.dayKey && days.some(d => d[0] === S.dayKey)) ? S.dayKey : (days.find(d => d[0] <= today) || days[days.length - 1])[0];
+    if (S.dayKey !== key && !S.dayLoading) { queueMicrotask(() => loadDay(key)); }
+    const picker = `<label class="f" style="margin-bottom:12px">Day<select data-act="pickDay">${days.map(([k, ms]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${dayLabel(k)} (${ms.length} match${ms.length === 1 ? '' : 'es'})</option>`).join('')}</select></label>`;
+    if (S.dayLoading || !S.dayEvents) return `${header('Stats')}${seg}${picker}<div class="empty">Loading daily stats…</div>`;
+    evs = S.dayEvents; title = `${team()?.name || 'Team'} ${dayLabel(key)}`;
+    const dayMatches = days.find(d => d[0] === key)[1];
+    body = picker + `<div class="card stack" style="gap:8px;margin-bottom:12px"><h2>Matches this day</h2>
+      ${dayMatches.map(m => { const ms = statLine(evs.filter(e => e.matchId === m.id));
+        return `<button class="row between" data-act="dayToMatch" data-id="${m.id}" aria-label="Show stats for vs ${esc(m.opponent)}" style="min-height:44px;width:100%;text-align:left"><span class="ell">vs ${esc(m.opponent)}${m.location ? `<span class="small muted">, ${esc(m.location)}</span>` : ''}</span><span class="row" style="gap:12px"><span class="small muted">Hit ${fmtHit(ms.hitPct)}</span><b style="color:${pmColor(ms.pm)}">${fmtPM(ms.pm)}</b></span></button>`; }).join('')}
+    </div>`;
   } else {
     const m = match() || S.matches[0];
     if (!m) return `${header('Stats')}${seg}<div class="empty">No matches yet.</div>`;
     if (!match()) { queueMicrotask(() => openMatchQuiet(m.id)); return `${header('Stats')}${seg}<div class="empty">Loading…</div>`; }
     evs = S.events; title = `vs ${m.opponent} ${fmtDate(m.date)}`;
-    body = `<div class="small muted" style="margin-bottom:12px">vs ${esc(m.opponent)}, ${fmtDate(m.date)}</div>`;
+    body = `<label class="f" style="margin-bottom:12px">Match<select data-act="pickMatch">${S.matches.map(x => `<option value="${x.id}" ${x.id === m.id ? 'selected' : ''}>${esc(fmtDate(x.date))}: vs ${esc(x.opponent)}</option>`).join('')}</select></label>`;
   }
   const s = statLine(evs);
   const maxErr = Math.max(1, ...CATS.map(c => s.errs[c] || 0));
@@ -834,14 +1078,27 @@ document.addEventListener('click', async e => {
       sendPasswordResetEmail(auth, em).then(() => toast('Password reset email sent')).catch(err => toast(err.message)); break; }
     case 'signout': closeMatch(); signOut(auth); break;
     case 'reload': location.reload(); break;
+    case 'dayToMatch': S.statsScope = 'match'; openMatchQuiet(id); window.scrollTo(0, 0); break;
+    case 'trendMetric': S.trendMetric = el.dataset.v; render(); break;
+    case 'aiCopy': { const p = playerById(S.cardPlayerId); if (p && S.cardData) shareAI(p, S.cardData); break; }
     case 'shareInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) shareInvite(i); break; }
     case 'emailInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) emailInvite(i); break; }
     case 'copyInvite': { const i = S.invites.find(x => x.id === id) || (S.lastInvite?.id === id && S.lastInvite); if (i) copyText(inviteLink(i)); break; }
     case 'cancelInvite': if (confirm('Cancel this invite? The link will stop working.')) { deleteDoc(doc(db, 'invites', id)).catch(fail('Invite')); if (S.lastInvite?.id === id) S.lastInvite = null; } break;
     case 'resetDevice': resetDevice(); break;
     case 'go': S.view = el.dataset.v; if (S.view === 'admin') loadCoachNames(); window.scrollTo(0, 0); render(); break;
-    case 'newMatch': S.showMatchForm = true; S.freshForms = true; render(); document.getElementById('m-opp')?.focus(); break;
-    case 'cancelMatch': S.showMatchForm = false; render(); break;
+    case 'newMatch': S.editMatchId = null; S.matchFormTour = undefined; S.showMatchForm = true; S.freshForms = true; render(); document.getElementById('m-opp')?.focus(); break;
+    case 'editMatch': S.editMatchId = id; S.matchFormTour = undefined; S.showMatchForm = true; S.freshForms = true; render(); window.scrollTo(0, 0); break;
+    case 'cancelMatch': S.showMatchForm = false; S.editMatchId = null; S.matchFormTour = undefined; render(); break;
+    case 'matchesTab': S.matchesTab = el.dataset.v; render(); break;
+    case 'newTour': S.editTourId = null; S.showTourForm = true; S.freshForms = true; render(); break;
+    case 'editTour': S.editTourId = id; S.showTourForm = true; S.freshForms = true; render(); window.scrollTo(0, 0); break;
+    case 'cancelTour': S.showTourForm = false; S.editTourId = null; render(); break;
+    case 'deleteTour': if (confirm('Delete this tournament? Its matches and stats stay; they just won’t be grouped under it.')) {
+      tourMatches(id).forEach(m => updateDoc(doc(db, 'teams', tid, 'matches', m.id), { tournamentId: '' }).catch(() => {}));
+      deleteDoc(doc(db, 'teams', tid, 'tournaments', id)).catch(fail('Tournament')); S.showTourForm = false; S.editTourId = null; render(); } break;
+    case 'tourStats': S.view = 'stats'; S.statsScope = 'tournament'; loadTournament(id); window.scrollTo(0, 0); break;
+    case 'goTournaments': S.view = 'matches'; S.matchesTab = 'tournaments'; S.showTourForm = true; S.editTourId = null; S.freshForms = true; render(); break;
     case 'open': openMatch(id); window.scrollTo(0, 0); break;
     case 'pick': S.selected = id; render(); break;
     case 'stat': record(el.dataset.t); break;
@@ -864,12 +1121,15 @@ document.addEventListener('click', async e => {
     case 'toggleActive': { const p = playerById(id); updateDoc(doc(db, 'teams', tid, 'players', id), { isActive: !p.isActive }).catch(fail('Player')); break; }
     case 'deletePlayer': if (confirm('Delete this player? Their past stats stay in team totals. Making them inactive is usually better.')) {
       deleteDoc(doc(db, 'teams', tid, 'players', id)).catch(fail('Player')); S.showPlayerForm = false; S.editPlayerId = null; render(); } break;
-    case 'scope': S.statsScope = el.dataset.v; render(); break;
+    case 'scope': S.statsScope = el.dataset.v; if (S.statsScope === 'day' && S.dayKey) loadDay(S.dayKey); if (S.statsScope === 'season' && S.statsSeasonId) loadSeason(S.statsSeasonId); if (S.statsScope === 'tournament' && S.tourId) loadTournament(S.tourId); render(); break;
     case 'csv': {
-      const season = S.statsScope === 'season';
+      const sc = S.statsScope;
       const m = match();
-      const title = season ? `${team()?.name || 'Team'} ${S.seasons.find(s => s.id === S.statsSeasonId)?.name || ''} season` : `vs ${m?.opponent || ''} ${fmtDate(m?.date)}`;
-      exportCSV(season ? S.seasonEvents || [] : S.events, title); break; }
+      const title = sc === 'season' ? `${team()?.name || 'Team'} ${S.seasons.find(s => s.id === S.statsSeasonId)?.name || ''} season`
+        : sc === 'day' ? `${team()?.name || 'Team'} ${dayLabel(S.dayKey)}`
+        : sc === 'tournament' ? `${team()?.name || 'Team'} ${tourById(S.tourId)?.name || 'tournament'}`
+        : `vs ${m?.opponent || ''} ${fmtDate(m?.date)}`;
+      exportCSV(sc === 'season' ? S.seasonEvents || [] : sc === 'day' ? S.dayEvents || [] : sc === 'tournament' ? S.tourEvents || [] : S.events, title); break; }
     case 'removeCoach': if (confirm('Remove this coach from the team?')) updateDoc(doc(db, 'teams', tid), { coachIds: arrayRemove(id) }).catch(fail('Coach')); break;
     case 'makeCurrent':
       for (const s of S.seasons) updateDoc(doc(db, 'seasons', s.id), { isCurrent: s.id === id }).catch(fail('Season'));
@@ -881,6 +1141,10 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.act === 'team') { selectTeam(el.value); }
   if (el.dataset.act === 'pickSeason') { loadSeason(el.value); }
+  if (el.dataset.act === 'pickDay') { loadDay(el.value); }
+  if (el.dataset.act === 'pickTour') { loadTournament(el.value); }
+  if (el.dataset.act === 'tourSelect') { S.matchFormTour = el.value; render(); }
+  if (el.dataset.act === 'pickMatch') { openMatchQuiet(el.value); }
   if (el.dataset.act === 'photo' && el.files && el.files[0]) {
     shrinkPhoto(el.files[0]).then(d => { S.formPhoto = d; render(); }).catch(() => toast('That photo couldn’t be read. Try a JPG or PNG.'));
   }
@@ -903,10 +1167,28 @@ document.addEventListener('submit', async e => {
       S.authBusy = false; render(); return;
     }
     if (f === 'match') {
-      const ref = doc(collection(db, 'teams', S.teamId, 'matches'));
+      let tourId = v('m-tour') || '';
+      let tourLoc = '';
+      if (tourId === '__new') {
+        const tref = doc(collection(db, 'teams', S.teamId, 'tournaments'));
+        const t = readTournament('t1', v('m-season') || '');
+        setDoc(tref, t).catch(fail('Tournament'));
+        tourId = tref.id; tourLoc = t.location;
+      } else if (tourId) tourLoc = tourById(tourId)?.location || '';
+      if (tourId) localStorage.setItem('lastTour:' + S.teamId, tourId);
       const d = new Date(v('m-date') + 'T12:00:00');
-      setDoc(ref, { opponent: v('m-opp'), date: Timestamp.fromDate(d), location: v('m-loc') || '', seasonId: v('m-season') || '', status: 'scheduled' }).catch(fail('Match'));
-      S.showMatchForm = false; S.freshForms = true; render(); return;
+      const data = { opponent: v('m-opp'), date: Timestamp.fromDate(d), location: v('m-loc') || tourLoc, seasonId: v('m-season') || '', tournamentId: tourId };
+      if (S.editMatchId) updateDoc(doc(db, 'teams', S.teamId, 'matches', S.editMatchId), data).catch(fail('Match'));
+      else setDoc(doc(collection(db, 'teams', S.teamId, 'matches')), { ...data, status: 'scheduled' }).catch(fail('Match'));
+      toast(S.editMatchId ? 'Match saved' : 'Match created');
+      S.showMatchForm = false; S.editMatchId = null; S.matchFormTour = undefined; S.freshForms = true; render(); return;
+    }
+    if (f === 'tour') {
+      const t = readTournament('t2');
+      if (S.editTourId) updateDoc(doc(db, 'teams', S.teamId, 'tournaments', S.editTourId), t).catch(fail('Tournament'));
+      else setDoc(doc(collection(db, 'teams', S.teamId, 'tournaments')), t).catch(fail('Tournament'));
+      toast(S.editTourId ? 'Tournament saved' : 'Tournament created');
+      S.showTourForm = false; S.editTourId = null; S.freshForms = true; render(); return;
     }
     if (f === 'player') {
       const gy = v('p-grad');
